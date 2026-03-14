@@ -1,265 +1,204 @@
 import * as XLSX from 'xlsx';
 
-// ─── Helper ────────────────────────────────────────────────────────────────
-const s = (v) => (v === undefined || v === null ? '' : String(v).trim());
-const n = (v) => { const f = parseFloat(v); return isNaN(f) ? 0 : f; };
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const trim = (v) => (v === undefined || v === null ? '' : String(v).trim());
+const num = (v) => { const f = parseFloat(trim(v)); return isNaN(f) ? null : f; };
 
-// SemNo roman / ordinal → integer
+// Roman numeral → integer map for SemNo
 const SEM_MAP = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10 };
 function semToInt(raw) {
-    const upper = s(raw).toUpperCase();
-    if (SEM_MAP[upper]) return SEM_MAP[upper];
-    const asInt = parseInt(upper, 10);
-    return isNaN(asInt) ? 0 : asInt;
+    const u = trim(raw).toUpperCase();
+    if (SEM_MAP[u]) return SEM_MAP[u];
+    const n = parseInt(u, 10);
+    return isNaN(n) ? 0 : n;
 }
 
-// ─── Merged-file format (output of merge_files.js) ─────────────────────────
-// One row per subject, columns: SourceFile, ENROLMENT, Name, CourseName, SemNo,
-// Period, SubCode, SubName, Credits, TheoryMarks, MidMarks, VivaMarks,
-// TotalMarks, PR_Percent, TheoryGrade, MidGrade, VivaGrade, SubGrade,
-// GradePoint, Comment, CURSEM_SPI, CURSEM_Credits, CURSEM_GRPOINT,
-// RESULT, REMARK, CUM_PPI, CLASS, Sem1BLog … Sem10BLog
+/**
+ * A subject is a backlog ONLY when the SubGrade is an explicit fail grade.
+ * We do NOT use GP=0 alone because:
+ *   - lab-only subjects legitimately have Theory=0 marks (and may show GP=0)
+ *   - Sem X final project has non-standard marks columns
+ * Safe fail grades from GTU system: 'F', 'FF', 'I', 'W', 'AB'
+ */
+const FAIL_GRADES = new Set(['F', 'FF', 'I', 'W', 'AB']);
+function isSubjectBacklog(grade, _gp) {
+    return FAIL_GRADES.has(trim(grade).toUpperCase());
+}
 
-function processMergedRows(rawData) {
-    // Group by ENROLMENT → SemNo → subjects[]
-    const studentMap = new Map(); // enrollmentNo → { ...meta, semesters: Map<semInt, semObj> }
+/**
+ * Backlog count from Sem*BLog column value.
+ * Returns an integer ≥ 0 or null if the value is not a numeric integer
+ * (Sem VII file stores MOOC titles and gender strings in these columns).
+ */
+function parseBacklogCount(v) {
+    const t = trim(v);
+    if (t === '' || t === '-') return null;
+    // Must be a string that looks purely like a non-negative integer
+    if (!/^\d+$/.test(t)) return null;
+    return parseInt(t, 10);
+}
 
-    rawData.forEach(row => {
-        const enrollment = s(row['ENROLMENT']);
-        if (!enrollment) return;
+// ─── Normalise student name for comparison ──────────────────────────────────
+function normName(name) {
+    return trim(name).toLowerCase().replace(/\s+/g, ' ');
+}
 
-        const semInt = semToInt(row['SemNo']);
+// ─── Build one semester record from a row ────────────────────────────────────
+function buildSemesterFromRow(row, subjects) {
+    return {
+        semNo: semToInt(row['SemNo']),
+        semLabel: trim(row['SemNo']),
+        period: trim(row['Period']),
+        spi: num(row['CURSEM_SPI']) ?? 0,
+        earnedCredits: num(row['CURSEM_Credits']) ?? 0,
+        totalCredits: num(row['CURSEM_CRERN']) ?? 0,    // credits registered
+        gradePoints: num(row['CURSEM_GRPOINT']) ?? 0,
+        result: trim(row['RESULT']),
+        remark: trim(row['REMARK'] ?? ''),
+        cumCredits: num(row['CUM_Credits']) ?? null,
+        cumCrern: num(row['CUM_CRERN']) ?? null,
+        cumGradePoints: num(row['CUM_GRPOINT']) ?? null,
+        cgpa: num(row['CUM_PPI']) ?? null,
+        classification: trim(row['CLASS']),
+        subjects,
+        backlogCounts: buildBacklogCounts(row),
+    };
+}
 
-        if (!studentMap.has(enrollment)) {
-            studentMap.set(enrollment, {
-                enrollmentNo: enrollment,
-                name: s(row['Name']),
-                branch: s(row['CourseName']),
-                semesters: new Map(),
-            });
-        }
+function buildBacklogCounts(row) {
+    const counts = {};
+    for (let i = 1; i <= 10; i++) {
+        const v = parseBacklogCount(row[`Sem${i}BLog`]);
+        if (v !== null) counts[i] = v;
+    }
+    return counts;
+}
 
-        const student = studentMap.get(enrollment);
-        // Update name/branch if they were blank and now have a value
-        if (!student.name && row['Name']) student.name = s(row['Name']);
-        if (!student.branch && row['CourseName']) student.branch = s(row['CourseName']);
+// ─── Extract subjects from ONE row (single-file format) ─────────────────────
+function extractSubjectsFromRow(row) {
+    const subjects = [];
+    for (let i = 1; i <= 8; i++) {
+        const pad = String(i).padStart(2, '0');
+        const sfx = i === 1 ? '' : `_${i - 1}`;
 
-        // Ensure semester record exists
-        if (!student.semesters.has(semInt)) {
-            student.semesters.set(semInt, {
-                semNo: semInt,
-                semLabel: s(row['SemNo']),
-                period: s(row['Period']),
-                spi: n(row['CURSEM_SPI']),
-                earnedCredits: n(row['CURSEM_Credits']),
-                gradePoints: n(row['CURSEM_GRPOINT']),
-                result: s(row['RESULT']),
-                remark: s(row['REMARK'] || row['Comment'] || ''),
-                subjects: [],
-                backlogCounts: {} // semN → count, from the row-level Sem*BLog columns
-            });
+        const code = trim(row[`SubCode${pad}`]);
+        if (!code || code === '-') continue;
+        if (/^Sem-/i.test(code)) continue; // skip embedded summary rows
 
-            // Read Sem*BLog columns
-            for (let i = 1; i <= 10; i++) {
-                const val = row[`Sem${i}BLog`];
-                if (val !== undefined && val !== '' && val !== '-') {
-                    const cnt = parseInt(val, 10);
-                    if (!isNaN(cnt)) student.semesters.get(semInt).backlogCounts[i] = cnt;
-                }
-            }
-        }
+        const grade = trim(row[`SubGrade${pad}`]);
+        const gp = num(row[`SubGP${pad}`]) ?? 0;
 
-        const sem = student.semesters.get(semInt);
-
-        // Add subject row if SubCode is present
-        const subCode = s(row['SubCode']);
-        if (subCode) {
-            const grade = s(row['SubGrade']);
-            const gp = n(row['GradePoint']);
-            const isBacklog = grade === 'FF' || grade === 'F' || gp === 0;
-
-            sem.subjects.push({
-                code: subCode,
-                name: s(row['SubName']),
-                credits: n(row['Credits']),
-                theoryMarks: s(row['TheoryMarks']),
-                midMarks: s(row['MidMarks']),
-                vivaMarks: s(row['VivaMarks']),
-                totalMarks: s(row['TotalMarks']),
-                prPercent: s(row['PR_Percent']),
-                theoryGrade: s(row['TheoryGrade']),
-                midGrade: s(row['MidGrade']),
-                vivaGrade: s(row['VivaGrade']),
-                subGrade: grade,
-                gradePoint: gp,
-                comment: s(row['Comment']),
-                isBacklog,
-            });
-        }
-    });
-
-    // ── Final processing ────────────────────────────────────────────────────
-    const students = Array.from(studentMap.values()).map(student => {
-        const sortedSems = Array.from(student.semesters.values())
-            .sort((a, b) => a.semNo - b.semNo); // ascending order
-
-        // Total active backlogs from Sem*BLog
-        let totalActiveBacklogs = 0;
-        const backlogSummary = [];
-        const seenBlogSems = new Set();
-
-        sortedSems.forEach(sem => {
-            Object.entries(sem.backlogCounts).forEach(([semNumStr, cnt]) => {
-                const k = parseInt(semNumStr);
-                if (!seenBlogSems.has(k)) {
-                    seenBlogSems.add(k);
-                    backlogSummary.push({ semester: k, backlogCount: cnt });
-                    totalActiveBacklogs += cnt;
-                }
-            });
+        subjects.push({
+            code,
+            name: trim(row[`SubHead${pad}`]),
+            credits: num(row[`SubCredit${pad}`]) ?? 0,
+            theoryMarks: trim(row[`Out of (70)E${sfx}`]),
+            midMarks: trim(row[`Total(30)M${sfx}`]),
+            vivaMarks: trim(row[`Practical(50)V${sfx}`]),
+            totalMarks: trim(row[`SubMark${pad}`]),
+            prPercent: trim(row[`PR((tot/150)*100)${sfx}`]),
+            theoryGrade: trim(row[`TGrade${i}`]),
+            midGrade: trim(row[`MGrade${i}`]),
+            vivaGrade: trim(row[`VGrade${i}`]),
+            subGrade: grade,
+            gradePoint: gp,
+            comment: trim(row[`Comment${sfx}`]),
+            isBacklog: isSubjectBacklog(grade, gp),
         });
-
-        backlogSummary.sort((a, b) => a.semester - b.semester);
-
-        // Latest semester data
-        const latestSem = sortedSems[sortedSems.length - 1] || {};
-
-        // CUM_PPI (CGPA) from last row that has it
-        const cgpa = s(student.semesters.size > 0
-            ? Array.from(student.semesters.values()).reduce((last, sem) => { return sem; }).cgpa
-            : '-') || '-';
-
-        // Overall status
-        let overallStatus = 'CLEAR';
-        if (totalActiveBacklogs >= 4) overallStatus = 'DETAINED';
-        else if (totalActiveBacklogs > 0) overallStatus = 'BACKLOG';
-
-        return {
-            enrollmentNo: student.enrollmentNo,
-            name: student.name,
-            branch: student.branch,
-            semesters: sortedSems,
-            latestSemNo: latestSem.semNo || 0,
-            latestSPI: latestSem.spi || 0,
-            latestResult: latestSem.result || '',
-            totalActiveBacklogs,
-            backlogSummary,
-            overallStatus,
-        };
-    });
-
-    return students;
+    }
+    return subjects;
 }
 
-// ─── Original single-file format (one row per student) ─────────────────────
-// Handles: SubCode01..SubCode05 with mark suffixes _1, _2, …
-function parseSingleFileRows(rawData) {
-    const studentMap = new Map();
+// ─── Extract subjects from ONE row (merged-file format) ──────────────────────
+function extractSubjectFromMergedRow(row) {
+    const code = trim(row['SubCode']);
+    if (!code) return null;
 
-    rawData.forEach(row => {
-        const enrollment = s(row['ENROLMENT']);
-        if (!enrollment) return;
+    const grade = trim(row['SubGrade']);
+    const gp = num(row['GradePoint']) ?? 0;
 
-        const semInt = semToInt(row['SemNo']);
-
-        if (!studentMap.has(enrollment)) {
-            studentMap.set(enrollment, {
-                enrollmentNo: enrollment,
-                name: s(row['Name']),
-                branch: s(row['CourseName']),
-                semesters: new Map(),
-            });
-        }
-
-        const student = studentMap.get(enrollment);
-
-        if (!student.semesters.has(semInt)) {
-            student.semesters.set(semInt, {
-                semNo: semInt,
-                semLabel: s(row['SemNo']),
-                period: s(row['Period']),
-                spi: n(row['CURSEM_SPI']),
-                earnedCredits: n(row['CURSEM_Credits']),
-                gradePoints: n(row['CURSEM_GRPOINT']),
-                result: s(row['RESULT']),
-                remark: s(row['REMARK'] || ''),
-                subjects: [],
-                backlogCounts: {},
-            });
-
-            for (let i = 1; i <= 10; i++) {
-                const val = row[`Sem${i}BLog`];
-                if (val !== undefined && val !== '' && val !== '-') {
-                    const cnt = parseInt(val, 10);
-                    if (!isNaN(cnt)) student.semesters.get(semInt).backlogCounts[i] = cnt;
-                }
-            }
-        }
-
-        const sem = student.semesters.get(semInt);
-
-        // Extract subjects (slots 1–5, or more)
-        for (let i = 1; i <= 8; i++) {
-            const pad = String(i).padStart(2, '0');
-            const sfx = i === 1 ? '' : `_${i - 1}`;
-            const code = s(row[`SubCode${pad}`]);
-            if (!code || code.startsWith('Sem-') || code === '-') continue;
-
-            const grade = s(row[`SubGrade${pad}`]);
-            const gp = n(row[`SubGP${pad}`]);
-
-            sem.subjects.push({
-                code,
-                name: s(row[`SubHead${pad}`]),
-                credits: n(row[`SubCredit${pad}`]),
-                theoryMarks: s(row[`Out of (70)E${sfx}`]),
-                midMarks: s(row[`Total(30)M${sfx}`]),
-                vivaMarks: s(row[`Practical(50)V${sfx}`]),
-                totalMarks: s(row[`SubMark${pad}`]),
-                prPercent: s(row[`PR((tot/150)*100)${sfx}`]),
-                theoryGrade: s(row[`TGrade${i}`]),
-                midGrade: s(row[`MGrade${i}`]),
-                vivaGrade: s(row[`VGrade${i}`]),
-                subGrade: grade,
-                gradePoint: gp,
-                comment: s(row[`Comment${sfx}`]),
-                isBacklog: grade === 'FF' || grade === 'F' || gp === 0,
-            });
-        }
-    });
-
-    return finalize(studentMap);
+    return {
+        code,
+        name: trim(row['SubName']),
+        credits: num(row['Credits']) ?? 0,
+        theoryMarks: trim(row['TheoryMarks']),
+        midMarks: trim(row['MidMarks']),
+        vivaMarks: trim(row['VivaMarks']),
+        totalMarks: trim(row['TotalMarks']),
+        prPercent: trim(row['PR_Percent']),
+        theoryGrade: trim(row['TheoryGrade']),
+        midGrade: trim(row['MidGrade']),
+        vivaGrade: trim(row['VivaGrade']),
+        subGrade: grade,
+        gradePoint: gp,
+        comment: trim(row['Comment']),
+        isBacklog: isSubjectBacklog(grade, gp),
+    };
 }
 
-function finalize(studentMap) {
+// ─── Finalise: sort, compute totals, determine status ────────────────────────
+function finalise(studentMap) {
     return Array.from(studentMap.values()).map(student => {
         const sortedSems = Array.from(student.semesters.values())
             .sort((a, b) => a.semNo - b.semNo);
 
-        let totalActiveBacklogs = 0;
-        const backlogSummary = [];
-        const seenBlogSems = new Set();
-
+        // Collect backlog summary from Sem*BLog columns (across all sems, deduped)
+        const backlogMap = new Map();
         sortedSems.forEach(sem => {
-            Object.entries(sem.backlogCounts).forEach(([kStr, cnt]) => {
-                const k = parseInt(kStr);
-                if (!seenBlogSems.has(k)) {
-                    seenBlogSems.add(k);
-                    backlogSummary.push({ semester: k, backlogCount: cnt });
-                    totalActiveBacklogs += cnt;
-                }
+            Object.entries(sem.backlogCounts).forEach(([k, v]) => {
+                const ki = parseInt(k);
+                if (!backlogMap.has(ki)) backlogMap.set(ki, v);
             });
         });
+        const backlogSummary = Array.from(backlogMap.entries())
+            .sort((a, b) => a[0] - b[0])
+            .map(([semester, backlogCount]) => ({ semester, backlogCount }));
 
-        backlogSummary.sort((a, b) => a.semester - b.semester);
+        const totalActiveBacklogs = backlogSummary.reduce((s, b) => s + b.backlogCount, 0);
 
         const latestSem = sortedSems[sortedSems.length - 1] || {};
         let overallStatus = 'CLEAR';
         if (totalActiveBacklogs >= 4) overallStatus = 'DETAINED';
         else if (totalActiveBacklogs > 0) overallStatus = 'BACKLOG';
 
+        // ── Build data quality warnings ──────────────────────────────────────
+        const dataWarnings = [];
+
+        // 1. Different enrollment numbers across files
+        if (student.enrollmentsByFile && student.enrollmentsByFile.size > 0) {
+            const pairs = Array.from(student.enrollmentsByFile.entries());
+            // Find files where the enrollment differs from the primary
+            const mismatches = pairs.filter(([, enr]) => enr !== student.primaryEnrollment);
+            if (mismatches.length > 0) {
+                const primaryFiles = pairs
+                    .filter(([, enr]) => enr === student.primaryEnrollment)
+                    .map(([f]) => f)
+                    .join(', ');
+                mismatches.forEach(([file, enr]) => {
+                    dataWarnings.push({
+                        type: 'ENROLLMENT_MISMATCH',
+                        severity: 'warning',
+                        message: `Different enrollment number found in source file "${file}". ` +
+                            `Expected ${student.primaryEnrollment} (used in ${primaryFiles || 'other files'}), ` +
+                            `but this file has ${enr}. Records were merged by student name.`,
+                    });
+                });
+            }
+        }
+
+        // 2. Duplicate semester entries
+        if (student.duplicateSems && student.duplicateSems.size > 0) {
+            student.duplicateSems.forEach(semLabel => {
+                dataWarnings.push({
+                    type: 'DUPLICATE_SEMESTER',
+                    severity: 'info',
+                    message: `Duplicate data rows found for Semester ${semLabel}. Second occurrence was merged into the first.`,
+                });
+            });
+        }
+
         return {
-            enrollmentNo: student.enrollmentNo,
+            enrollmentNo: student.primaryEnrollment,
             name: student.name,
             branch: student.branch,
             semesters: sortedSems,
@@ -269,17 +208,136 @@ function finalize(studentMap) {
             totalActiveBacklogs,
             backlogSummary,
             overallStatus,
+            dataWarnings,
         };
     });
 }
 
-// ─── Detect format ─────────────────────────────────────────────────────────
-function isMergedFormat(rows) {
-    if (!rows.length) return false;
-    return 'SourceFile' in rows[0] && 'SubCode' in rows[0];
+// ─── Process MERGED file (one row per subject) ───────────────────────────────
+function processMergedRows(rawData) {
+    const studentMap = new Map();
+    const nameIndex = new Map();
+
+    rawData.forEach(row => {
+        const enrollment = trim(row['ENROLMENT']);
+        if (!enrollment) return;
+
+        const studentName = trim(row['Name']);
+        const normN = normName(studentName);
+        const semInt = semToInt(row['SemNo']);
+        const sourceFile = trim(row['SourceFile']) || 'unknown file';
+
+        let key = enrollment;
+        if (!studentMap.has(enrollment) && nameIndex.has(normN)) {
+            key = nameIndex.get(normN);
+        }
+
+        if (!studentMap.has(key)) {
+            studentMap.set(key, {
+                primaryEnrollment: enrollment,
+                name: studentName,
+                branch: trim(row['CourseName']),
+                semesters: new Map(),
+                enrollmentsByFile: new Map(),   // file → enrollment string
+                duplicateSems: new Set(),
+            });
+            nameIndex.set(normN, key);
+        }
+
+        const student = studentMap.get(key);
+        if (!student.name && studentName) student.name = studentName;
+        if (!student.branch && row['CourseName']) student.branch = trim(row['CourseName']);
+
+        // Track which enrollment was seen in which file
+        if (!student.enrollmentsByFile.has(sourceFile)) {
+            student.enrollmentsByFile.set(sourceFile, enrollment);
+        }
+
+        if (!student.semesters.has(semInt)) {
+            student.semesters.set(semInt, buildSemesterFromRow(row, []));
+        } else {
+            student.duplicateSems.add(trim(row['SemNo']));
+        }
+
+        const sub = extractSubjectFromMergedRow(row);
+        if (sub) student.semesters.get(semInt).subjects.push(sub);
+    });
+
+    return finalise(studentMap);
 }
 
-// ─── Public API ────────────────────────────────────────────────────────────
+// ─── Process SINGLE file (one row per student, up to 5 subjects per row) ─────
+function processSingleFileRows(rawData) {
+    const studentMap = new Map();
+    const nameIndex = new Map();
+
+    rawData.forEach(row => {
+        const enrollment = trim(row['ENROLMENT']);
+        if (!enrollment) return;
+
+        const studentName = trim(row['Name']);
+        const normN = normName(studentName);
+        const semInt = semToInt(row['SemNo']);
+        const semLabel = trim(row['SemNo']);
+
+        let key = enrollment;
+        if (!studentMap.has(enrollment) && nameIndex.has(normN)) {
+            key = nameIndex.get(normN);
+        }
+
+        if (!studentMap.has(key)) {
+            studentMap.set(key, {
+                primaryEnrollment: enrollment,
+                name: studentName,
+                branch: trim(row['CourseName']),
+                semesters: new Map(),
+                enrollmentsByFile: new Map(),
+                duplicateSems: new Set(),
+            });
+            nameIndex.set(normN, key);
+        }
+
+        const student = studentMap.get(key);
+
+        // Track enrollment per file (the file is the semester file itself)
+        // Use semLabel as a proxy for "file" in single-file mode
+        const fileKey = semLabel || 'unknown';
+        if (!student.enrollmentsByFile.has(fileKey)) {
+            student.enrollmentsByFile.set(fileKey, enrollment);
+        } else if (student.enrollmentsByFile.get(fileKey) !== enrollment) {
+            // Multiple different enrollments within the same semester file
+            student.enrollmentsByFile.set(fileKey + '_alt', enrollment);
+        }
+
+        const subjects = extractSubjectsFromRow(row);
+
+        if (!student.semesters.has(semInt)) {
+            student.semesters.set(semInt, buildSemesterFromRow(row, subjects));
+        } else {
+            student.duplicateSems.add(semLabel);
+            student.semesters.get(semInt).subjects.push(...subjects);
+        }
+    });
+
+    return finalise(studentMap);
+}
+
+// ─── Detect format ────────────────────────────────────────────────────────────
+function isMergedFormat(rows) {
+    return rows.length > 0 && 'SourceFile' in rows[0] && 'SubCode' in rows[0];
+}
+
+// ─── Read workbook safely (string mode to preserve 16-digit enrollment IDs) ──
+function readWorkbook(content, type) {
+    return XLSX.read(content, {
+        type,
+        raw: false,      // Return all cells as formatted strings
+        cellText: true,
+        cellDates: false,
+    });
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
 export const parseFile = (file) => {
     const name = (file.name || '').toLowerCase();
 
@@ -288,9 +346,9 @@ export const parseFile = (file) => {
             const reader = new FileReader();
             reader.onload = e => {
                 try {
-                    const wb = XLSX.read(e.target.result, { type: 'string' });
-                    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                    resolve(isMergedFormat(rows) ? processMergedRows(rows) : parseSingleFileRows(rows));
+                    const wb = readWorkbook(e.target.result, 'string');
+                    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false });
+                    resolve(isMergedFormat(rows) ? processMergedRows(rows) : processSingleFileRows(rows));
                 } catch (err) {
                     reject(new Error('Could not read CSV: ' + err.message));
                 }
@@ -305,9 +363,9 @@ export const parseFile = (file) => {
         const reader = new FileReader();
         reader.onload = e => {
             try {
-                const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-                const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                resolve(isMergedFormat(rows) ? processMergedRows(rows) : parseSingleFileRows(rows));
+                const wb = readWorkbook(new Uint8Array(e.target.result), 'array');
+                const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false });
+                resolve(isMergedFormat(rows) ? processMergedRows(rows) : processSingleFileRows(rows));
             } catch (err) {
                 reject(new Error('Could not read Excel: ' + err.message));
             }

@@ -1,110 +1,103 @@
 /**
- * merge_files.js
+ * merge_files.js  (v2)
  * Run with: node merge_files.js
- * 
- * Reads all 4 semester CSVs, extracts ONLY the necessary columns,
- * adds a "SourceFile" and "SemNo" column for easy identification, 
- * then writes a single merged CSV: merged_results.csv
+ *
+ * Key fix: ENROLMENT is a 16-digit integer that exceeds JS float64 precision.
+ * We use { raw: false } in SheetJS so all cells are read as formatted strings,
+ * then we only keep ENROLMENT as-is (string). Numeric fields like marks are
+ * parsed explicitly with parseFloat.
+ *
+ * Sem*BLog fix: In the Sem VII file, those columns hold unrelated data
+ * (MOOC course names, gender). We only count a backlog if the value
+ * is a non-negative integer. Strings are silently ignored.
  */
 
 const XLSX = require('./blts/node_modules/xlsx');
 const fs = require('fs');
 const path = require('path');
 
-// ─── Config ───────────────────────────────────────────────────────────────────
 const INPUT_DIR = __dirname;
 const OUTPUT_FILE = path.join(__dirname, 'merged_results.csv');
 
-// The necessary columns to keep in the merged output
-// Identity columns (always kept)
-const IDENTITY_COLS = ['ENROLMENT', 'Name', 'CourseName', 'SemNo', 'Period'];
-
-// For subjects 1-5 the pattern repeats with a suffix per subject slot
-// We'll expand these dynamically
-const SUB_COLS_PER_SUBJECT = [
-    'SubCode',    // e.g. SubCode01
-    'SubHead',    // e.g. SubHead01
-    'SubCredit',  // e.g. SubCredit01
-    'E',          // Theory: "Out of (70)E" or "Out of (70)E_N"
-    'M',          // Mid:    "Total(30)M"   or "Total(30)M_N"
-    'V',          // Viva:   "Practical(50)V" or "Practical(50)V_N"
-    'SubMark',    // Total submark
-    'SubGrade',   // Grade
-    'SubGP',      // Grade Point
-    'TGrade',     // Theory grade
-    'MGrade',     // Mid grade
-    'VGrade',     // Viva grade
-    'Comment',    // Comment on subject (e.g. "Success", "Pra/Viva")
-];
-
-// Semester-level summary
+// ─── Keep only these columns in the output ────────────────────────────────────
 const SEM_SUMMARY_COLS = [
-    'CURSEM_CRERN',
-    'CURSEM_Credits',
-    'CURSEM_GRPOINT',
-    'CURSEM_SPI',
-    'RESULT',
-    'REMARK',
-    'CUM_CRERN',
-    'CUM_Credits',
-    'CUM_GRPOINT',
-    'CUM_PPI',
-    'CLASS',
+    'CURSEM_CRERN', 'CURSEM_Credits', 'CURSEM_GRPOINT', 'CURSEM_SPI',
+    'RESULT', 'REMARK',
+    'CUM_CRERN', 'CUM_Credits', 'CUM_GRPOINT', 'CUM_PPI', 'CLASS',
     'Sem1BLog', 'Sem2BLog', 'Sem3BLog', 'Sem4BLog', 'Sem5BLog',
     'Sem6BLog', 'Sem7BLog', 'Sem8BLog', 'Sem9BLog', 'Sem10BLog',
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const s = (v) => (v === undefined || v === null ? '' : String(v).trim());
+const trim = (v) => (v === undefined || v === null ? '' : String(v).trim());
+
+/** Returns the integer if v is a valid non-negative integer string, else null */
+function parseBacklogCount(v) {
+    const t = trim(v);
+    if (t === '' || t === '-') return null;
+    const n = parseInt(t, 10);
+    // Reject if parseInt succeeded but the original string clearly isn't a number
+    // e.g. "Female", "Coursera", MOOC titles, etc.
+    if (isNaN(n)) return null;
+    if (String(n) !== t && !(/^\d+$/.test(t))) return null; // extra safety
+    return n >= 0 ? n : null;
+}
 
 function readFileRows(fpath) {
     const fname = path.basename(fpath);
-    let rawData;
     try {
+        let wb;
         if (fname.endsWith('.csv')) {
-            const wb = XLSX.read(fs.readFileSync(fpath, 'utf8'), { type: 'string' });
-            rawData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+            wb = XLSX.read(fs.readFileSync(fpath, 'utf8'), {
+                type: 'string',
+                raw: false,      // Return all values as formatted strings
+                cellText: true,
+                cellDates: false,
+            });
         } else {
-            const wb = XLSX.readFile(fpath);
-            rawData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+            wb = XLSX.readFile(fpath, {
+                raw: false,
+                cellText: true,
+                cellDates: false,
+            });
         }
+        // Use header:'A' then json to avoid SheetJS auto-converting big numbers
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        return XLSX.utils.sheet_to_json(ws, {
+            defval: '',
+            raw: false,   // Force all cells as strings
+        });
     } catch (e) {
         console.warn(`  ⚠ Could not read ${fname}: ${e.message}`);
         return [];
     }
-    return rawData;
 }
 
-/**
- * From a raw row, extract one flat "canonical" record per SUBJECT SLOT.
- * Returns an array of flat row objects (one per subject slot present in the row).
- */
 function extractSubjectRows(raw, sourceFile) {
-    const enrollment = s(raw['ENROLMENT']);
+    // Trim enrollment and use it as a pure string
+    const enrollment = trim(raw['ENROLMENT']);
     if (!enrollment) return [];
 
-    const semNo = s(raw['SemNo']);
-    const period = s(raw['Period']);
-    const name = s(raw['Name']);
-    const course = s(raw['CourseName']);
+    const semNo = trim(raw['SemNo']);
+    const period = trim(raw['Period']);
+    const name = trim(raw['Name']);
+    const course = trim(raw['CourseName']);
 
-    // Summary fields (same for all subjects in this row)
     const summaryFields = {};
     SEM_SUMMARY_COLS.forEach(col => {
-        summaryFields[col] = s(raw[col]);
+        summaryFields[col] = trim(raw[col]);
     });
 
     const subjects = [];
 
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 8; i++) {
         const pad = String(i).padStart(2, '0');
-        // Subject code key for slot i
-        const codeKey = `SubCode${pad}`;
-        const code = s(raw[codeKey]);
-        if (!code || code === '-') continue; // no subject in this slot
-
-        // Suffix for repeated mark column names (slot 1 is no suffix, slot 2 is _1, slot 3 is _2…)
         const sfx = i === 1 ? '' : `_${i - 1}`;
+
+        const code = trim(raw[`SubCode${pad}`]);
+        if (!code || code === '-') continue;
+        // Skip summary-style rows embedded as SubCode (e.g. "Sem-VII" strings)
+        if (/^Sem-/i.test(code)) continue;
 
         const subRow = {
             SourceFile: sourceFile,
@@ -113,33 +106,32 @@ function extractSubjectRows(raw, sourceFile) {
             CourseName: course,
             SemNo: semNo,
             Period: period,
-            //── Subject identifiers ──
+            //── Subject identifiers ──────────────────────────────────────────────
             SubCode: code,
-            SubName: s(raw[`SubHead${pad}`]),
-            Credits: s(raw[`SubCredit${pad}`]),
-            //── Marks ───────────────
-            TheoryMarks: s(raw[`Out of (70)E${sfx}`]),
-            MidMarks: s(raw[`Total(30)M${sfx}`]),
-            VivaMarks: s(raw[`Practical(50)V${sfx}`]),
-            TotalMarks: s(raw[`SubMark${pad}`]),
-            PR_Percent: s(raw[`PR((tot/150)*100)${sfx}`]),
-            //── Grades ──────────────
-            TheoryGrade: s(raw[`TGrade${i}`]),
-            MidGrade: s(raw[`MGrade${i}`]),
-            VivaGrade: s(raw[`VGrade${i}`]),  // NOTE: VGrade1 in the sheet
-            SubGrade: s(raw[`SubGrade${pad}`]),
-            GradePoint: s(raw[`SubGP${pad}`]),
-            Comment: s(raw[`Comment${sfx === '' ? '' : sfx}`]),
-            //── Semester totals (repeated per subject, but useful for filtering) ──
+            SubName: trim(raw[`SubHead${pad}`]),
+            Credits: trim(raw[`SubCredit${pad}`]),
+            //── Marks ─────────────────────────────────────────────────────────────
+            TheoryMarks: trim(raw[`Out of (70)E${sfx}`]),
+            MidMarks: trim(raw[`Total(30)M${sfx}`]),
+            VivaMarks: trim(raw[`Practical(50)V${sfx}`]),
+            TotalMarks: trim(raw[`SubMark${pad}`]),
+            PR_Percent: trim(raw[`PR((tot/150)*100)${sfx}`]),
+            //── Component grades (Theory / Mid / Viva) ────────────────────────────
+            TheoryGrade: trim(raw[`TGrade${i}`]),
+            MidGrade: trim(raw[`MGrade${i}`]),
+            VivaGrade: trim(raw[`VGrade${i}`]),
+            //── Subject grade & GP ────────────────────────────────────────────────
+            SubGrade: trim(raw[`SubGrade${pad}`]),
+            GradePoint: trim(raw[`SubGP${pad}`]),
+            Comment: trim(raw[`Comment${sfx}`]),
+            //── Semester summary (repeated per subject for filtering convenience) ──
             ...summaryFields,
         };
 
         subjects.push(subRow);
     }
 
-    // Edge case: no subjects parsed (e.g. final sem has non-standard layout)
     if (subjects.length === 0) {
-        // Still add 1 row with just identity + summary, blank subject fields
         subjects.push({
             SourceFile: sourceFile,
             ENROLMENT: enrollment,
@@ -148,8 +140,7 @@ function extractSubjectRows(raw, sourceFile) {
             SemNo: semNo,
             Period: period,
             SubCode: '', SubName: '', Credits: '',
-            TheoryMarks: '', MidMarks: '', VivaMarks: '',
-            TotalMarks: '', PR_Percent: '',
+            TheoryMarks: '', MidMarks: '', VivaMarks: '', TotalMarks: '', PR_Percent: '',
             TheoryGrade: '', MidGrade: '', VivaGrade: '',
             SubGrade: '', GradePoint: '', Comment: '',
             ...summaryFields,
@@ -159,11 +150,10 @@ function extractSubjectRows(raw, sourceFile) {
     return subjects;
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────
 function main() {
     const files = fs.readdirSync(INPUT_DIR)
         .filter(f => /\.(xlsx|csv|xls)$/i.test(f) && !f.startsWith('merged'))
-        .sort(); // sort by filename to maintain semester order
+        .sort();
 
     console.log(`Found ${files.length} file(s):`);
     files.forEach(f => console.log(`  - ${f}`));
@@ -171,14 +161,16 @@ function main() {
     let allRows = [];
 
     files.forEach(fname => {
-        const fpath = path.join(INPUT_DIR, fname);
-        const rawRows = readFileRows(fpath);
+        const rawRows = readFileRows(path.join(INPUT_DIR, fname));
         console.log(`  ${fname}: ${rawRows.length} student rows`);
 
+        let subjectRows = 0;
         rawRows.forEach(raw => {
-            const subjectRows = extractSubjectRows(raw, fname);
-            allRows = allRows.concat(subjectRows);
+            const subjectRowsForStudent = extractSubjectRows(raw, fname);
+            allRows = allRows.concat(subjectRowsForStudent);
+            subjectRows += subjectRowsForStudent.length;
         });
+        console.log(`    → ${subjectRows} subject rows extracted`);
     });
 
     if (allRows.length === 0) {
@@ -186,16 +178,21 @@ function main() {
         return;
     }
 
-    console.log(`\nTotal merged rows (one per subject slot): ${allRows.length}`);
+    // Verify: print unique ENROLMENTs
+    const uniqueEnrollments = new Set(allRows.map(r => r.ENROLMENT));
+    console.log(`\nTotal merged rows: ${allRows.length}`);
+    console.log(`Unique students by ENROLMENT: ${uniqueEnrollments.size}`);
 
-    // Write to CSV
+    // Sample AGRAWAL check
+    const agrawalRows = allRows.filter(r => r.Name && r.Name.toLowerCase().includes('agrawal neha'));
+    const agrawalSems = [...new Set(agrawalRows.map(r => r.SemNo))].sort();
+    console.log(`\nAGRAWAL NEHA semesters in merged file: ${agrawalSems.join(', ')}`);
+
     const ws = XLSX.utils.json_to_sheet(allRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'MergedResults');
     XLSX.writeFile(wb, OUTPUT_FILE);
-
-    console.log(`\n✅ Merged file written to: ${OUTPUT_FILE}`);
-    console.log('Columns in merged file:', Object.keys(allRows[0]).join(', '));
+    console.log(`\n✅ Written: ${OUTPUT_FILE}`);
 }
 
 main();
