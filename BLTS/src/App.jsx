@@ -1,18 +1,67 @@
-import { useState } from 'react'
+import React, { useState } from 'react';
+import UploadScreen from './components/UploadScreen';
+import SearchScreen from './components/SearchScreen';
+import ReportScreen from './components/ReportScreen';
+import { parseFile } from './utils/parseExcel';
 
 function App() {
+  const [appState, setAppState] = useState('upload'); // 'upload', 'search', 'report'
+  const [studentsData, setStudentsData] = useState([]);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [fileName, setFileName] = useState('');
+
+  const handleFileLoaded = async (file) => {
+    try {
+      const parsedData = await parseFile(file);
+      setStudentsData(parsedData);
+      setFileName(file.name);
+      setAppState('search');
+    } catch (error) {
+      console.error(error);
+      throw error; // Let UploadScreen handle showing the error
+    }
+  };
+
+  const handleStudentSelect = (student) => {
+    setSelectedStudent(student);
+    setAppState('report');
+  };
+
+  const handleBackToSearch = () => {
+    setSelectedStudent(null);
+    setAppState('search');
+  };
+
+  const handleResetFile = () => {
+    setStudentsData([]);
+    setSelectedStudent(null);
+    setFileName('');
+    setAppState('upload');
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full text-center">
-        <h1 className="text-3xl font-bold text-emerald-600 mb-4">
-          Student Backlog Tracker
-        </h1>
-        <p className="text-gray-600">
-          Tailwind CSS setup successful!
-        </p>
-      </div>
-    </div>
-  )
+    <>
+      {appState === 'upload' && (
+        <UploadScreen onFileLoaded={handleFileLoaded} />
+      )}
+
+      {appState === 'search' && (
+        <SearchScreen
+          students={studentsData}
+          onStudentSelect={handleStudentSelect}
+          onResetFile={handleResetFile}
+          fileName={fileName}
+        />
+      )}
+
+      {appState === 'report' && selectedStudent && (
+        <ReportScreen
+          student={selectedStudent}
+          onBack={handleBackToSearch}
+        />
+      )}
+    </>
+  );
 }
 
-export default App
+export default App;
