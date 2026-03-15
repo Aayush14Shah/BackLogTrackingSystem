@@ -115,82 +115,72 @@ function SubjectTable({ subjects = [], semLabel }) {
         <div className="overflow-x-auto">
             <table className="w-full text-left text-sm border-collapse">
                 <thead>
-                    <tr className="text-xs uppercase tracking-wider text-slate-500 border-b-2 border-slate-200 bg-white">
-                        <th className="px-3 py-3 font-semibold text-left w-28">Code</th>
-                        <th className="px-3 py-3 font-semibold text-left">Subject Name</th>
-                        <th className="px-3 py-3 font-semibold text-center w-16">
-                            Credits
+                    {/* Row 1 – Column group labels */}
+                    <tr className="text-[10px] font-bold uppercase tracking-wider text-white bg-slate-600">
+                        <th colSpan={2} className="px-3 py-2 text-left">Subject</th>
+                        <th colSpan={5} className="px-3 py-2 text-center border-l border-slate-500">
+                            Marks — Theory / Mid / Viva (each out of 50)
                         </th>
-                        <th className="px-3 py-3 font-semibold text-center w-20">
-                            Theory<br />
-                            <span className="font-normal normal-case text-slate-400">out of 70</span>
+                        <th colSpan={4} className="px-3 py-2 text-center border-l border-slate-500">
+                            Component Grades
                         </th>
-                        <th className="px-3 py-3 font-semibold text-center w-20">
-                            Mid<br />
-                            <span className="font-normal normal-case text-slate-400">out of 30</span>
+                        <th colSpan={3} className="px-3 py-2 text-center border-l border-slate-500">
+                            Final Result
                         </th>
-                        <th className="px-3 py-3 font-semibold text-center w-20">
-                            Viva<br />
-                            <span className="font-normal normal-case text-slate-400">out of 50</span>
+                        <th className="px-3 py-2 text-center border-l border-slate-500">Remarks</th>
+                    </tr>
+                    {/* Row 2 – individual column headers */}
+                    <tr className="text-xs uppercase tracking-wide text-slate-500 border-b-2 border-slate-200 bg-slate-50">
+                        <th className="px-3 py-2.5 font-semibold text-left">Code</th>
+                        <th className="px-3 py-2.5 font-semibold text-left min-w-[160px]">Subject Name</th>
+                        <th className="px-3 py-2.5 font-semibold text-center border-l border-slate-200">Credits</th>
+                        <th className="px-3 py-2.5 font-semibold text-center">
+                            Theory<br /><span className="font-normal normal-case text-slate-400">/50</span>
                         </th>
-                        <th className="px-3 py-3 font-semibold text-center w-24">
-                            Total<br />
-                            <span className="font-normal normal-case text-slate-400">out of 150</span>
+                        <th className="px-3 py-2.5 font-semibold text-center">
+                            Mid<br /><span className="font-normal normal-case text-slate-400">/50</span>
                         </th>
-                        <th className="px-3 py-3 font-semibold text-center w-20">T. Grade</th>
-                        <th className="px-3 py-3 font-semibold text-center w-20">M. Grade</th>
-                        <th className="px-3 py-3 font-semibold text-center w-20">V. Grade</th>
-                        <th className="px-3 py-3 font-semibold text-center w-24">
-                            Grade<br />
-                            <span className="font-normal normal-case text-slate-400">Subject</span>
+                        <th className="px-3 py-2.5 font-semibold text-center">
+                            Viva<br /><span className="font-normal normal-case text-slate-400">/50</span>
                         </th>
-                        <th className="px-3 py-3 font-semibold text-center w-16">GP</th>
-                        <th className="px-3 py-3 font-semibold text-center w-24">Remarks</th>
+                        <th className="px-3 py-2.5 font-semibold text-center">
+                            Total<br /><span className="font-normal normal-case text-slate-400">/150</span>
+                        </th>
+                        <th className="px-3 py-2.5 font-semibold text-center border-l border-slate-200">T. Grade</th>
+                        <th className="px-3 py-2.5 font-semibold text-center">M. Grade</th>
+                        <th className="px-3 py-2.5 font-semibold text-center">V. Grade</th>
+                        <th className="px-3 py-2.5 font-semibold text-center">Sub Grade</th>
+                        <th className="px-3 py-2.5 font-semibold text-center border-l border-slate-200">GP</th>
+                        <th className="px-3 py-2.5 font-semibold text-center">
+                            EM Cr<br /><span className="font-normal normal-case text-slate-400">Credits</span>
+                        </th>
+                        <th className="px-3 py-2.5 font-semibold text-center">EM Grade</th>
+                        <th className="px-3 py-2.5 font-semibold text-center border-l border-slate-200">Remarks</th>
                     </tr>
                 </thead>
                 <tbody>
                     {subjects.map((sub, idx) => {
                         const isFail = sub.isBacklog;
                         return (
-                            <tr
-                                key={idx}
-                                className={cn(
-                                    'border-b transition-colors print:border-slate-200',
-                                    isFail
-                                        ? 'bg-red-50 hover:bg-red-100/80'
-                                        : idx % 2 === 0
-                                            ? 'bg-white hover:bg-slate-50'
-                                            : 'bg-slate-50/40 hover:bg-slate-50'
-                                )}
-                            >
+                            <tr key={idx} className={cn('border-b transition-colors print:border-slate-200',
+                                isFail ? 'bg-red-50 hover:bg-red-100/80'
+                                    : idx % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50/40 hover:bg-slate-50')}>
+
                                 {/* Code */}
-                                <td className="px-3 py-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">
-                                    {sub.code}
+                                <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">{sub.code}</td>
+
+                                {/* Subject name + badge */}
+                                <td className="px-3 py-2.5">
+                                    <p className="font-medium text-slate-800 leading-snug" title={sub.name}>{sub.name || '—'}</p>
+                                    {isFail && (
+                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 mt-0.5 text-[9px] font-bold uppercase rounded bg-red-200 text-red-800">
+                                            <XCircle className="w-2.5 h-2.5" /> Not Cleared
+                                        </span>
+                                    )}
                                 </td>
 
-                                {/* Subject name */}
-                                <td className="px-3 py-3">
-                                    <div className="flex items-start gap-2">
-                                        <div>
-                                            <p className="font-medium text-slate-800 leading-snug" title={sub.name}>
-                                                {sub.name || '—'}
-                                            </p>
-                                            <div className="flex items-center gap-1.5 mt-0.5">
-                                                {isFail && (
-                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-red-200 text-red-800 print:border print:border-red-400">
-                                                        <XCircle className="w-2.5 h-2.5" /> NOT CLEARED
-                                                    </span>
-                                                )}
-                                                {!isFail && sub.comment && sub.comment !== 'Success' && sub.comment !== '-' && (
-                                                    <span className="text-[10px] text-slate-400 italic">{sub.comment}</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </td>
-
-                                {/* Credits */}
-                                <td className="px-3 py-3 text-center">
+                                {/* Credits — marks group start */}
+                                <td className="px-3 py-2.5 text-center border-l border-slate-100">
                                     <span className="font-semibold text-slate-700">{sub.credits || '—'}</span>
                                     {sub.credits ? <span className="text-[10px] text-slate-400 ml-0.5">cr</span> : ''}
                                 </td>
@@ -200,21 +190,23 @@ function SubjectTable({ subjects = [], semLabel }) {
                                 <MarkCell val={sub.vivaMarks} />
                                 <MarkCell val={sub.totalMarks} bold />
 
-                                <GradeCell grade={sub.theoryGrade} />
+                                {/* Grades group — border left on first cell */}
+                                <td className="border-l border-slate-100 p-0"><GradeCell grade={sub.theoryGrade} /></td>
                                 <GradeCell grade={sub.midGrade} />
                                 <GradeCell grade={sub.vivaGrade} />
                                 <GradeCell grade={sub.subGrade} isSubGrade />
 
-                                {/* GP */}
-                                <td className="px-3 py-3 text-center font-semibold text-slate-800 tabular-nums">
-                                    {(sub.gradePoint !== null && sub.gradePoint !== undefined && sub.gradePoint !== '')
-                                        ? sub.gradePoint : '—'}
+                                {/* Final result group — border left */}
+                                <td className="px-3 py-2.5 text-center font-semibold text-slate-800 tabular-nums border-l border-slate-100">
+                                    {sub.gradePoint !== null && sub.gradePoint !== undefined && sub.gradePoint !== '' ? sub.gradePoint : '—'}
                                 </td>
+                                <td className="px-3 py-2.5 text-center text-slate-700 font-medium tabular-nums">
+                                    {sub.emCredits != null ? <>{sub.emCredits}<span className="text-[10px] text-slate-400 ml-0.5">cr</span></> : '—'}
+                                </td>
+                                <GradeCell grade={sub.emGrade} isSubGrade />
 
-                                {/* Comment */}
-                                <td className="px-3 py-3 text-center text-xs text-slate-500">
-                                    {sub.comment || '—'}
-                                </td>
+                                {/* Remarks */}
+                                <td className="px-3 py-2.5 text-center text-xs text-slate-500 border-l border-slate-100">{sub.comment || '—'}</td>
                             </tr>
                         );
                     })}

@@ -83,7 +83,7 @@ function extractSubjectsFromRow(row) {
 
         const code = trim(row[`SubCode${pad}`]);
         if (!code || code === '-') continue;
-        if (/^Sem-/i.test(code)) continue; // skip embedded summary rows
+        if (/^Sem-/i.test(code)) continue;
 
         const grade = trim(row[`SubGrade${pad}`]);
         const gp = num(row[`SubGP${pad}`]) ?? 0;
@@ -92,14 +92,21 @@ function extractSubjectsFromRow(row) {
             code,
             name: trim(row[`SubHead${pad}`]),
             credits: num(row[`SubCredit${pad}`]) ?? 0,
+            // Marks (column names are misleading; actual max per component = 50)
             theoryMarks: trim(row[`Out of (70)E${sfx}`]),
             midMarks: trim(row[`Total(30)M${sfx}`]),
             vivaMarks: trim(row[`Practical(50)V${sfx}`]),
-            totalMarks: trim(row[`SubMark${pad}`]),
+            totalMarks: trim(row[`SubMark${pad}`]),   // sum of all three, out of 150
             prPercent: trim(row[`PR((tot/150)*100)${sfx}`]),
+            // Component grades
             theoryGrade: trim(row[`TGrade${i}`]),
             midGrade: trim(row[`MGrade${i}`]),
+            vivaCredits: num(row[`VCredits${i}`]) ?? null,
             vivaGrade: trim(row[`VGrade${i}`]),
+            // EM result (final credit & grade assigned per subject)
+            emCredits: num(row[`EMCredits${i}`]) ?? null,
+            emGrade: trim(row[`EMGrade${i}`]),
+            // Overall
             subGrade: grade,
             gradePoint: gp,
             comment: trim(row[`Comment${sfx}`]),
@@ -128,7 +135,10 @@ function extractSubjectFromMergedRow(row) {
         prPercent: trim(row['PR_Percent']),
         theoryGrade: trim(row['TheoryGrade']),
         midGrade: trim(row['MidGrade']),
+        vivaCredits: num(row['VivaCredits']) ?? null,
         vivaGrade: trim(row['VivaGrade']),
+        emCredits: num(row['EMCredits']) ?? null,
+        emGrade: trim(row['EMGrade']),
         subGrade: grade,
         gradePoint: gp,
         comment: trim(row['Comment']),
@@ -142,17 +152,19 @@ function finalise(studentMap) {
         const sortedSems = Array.from(student.semesters.values())
             .sort((a, b) => a.semNo - b.semNo);
 
-        // Collect backlog summary from Sem*BLog columns (across all sems, deduped)
-        const backlogMap = new Map();
-        sortedSems.forEach(sem => {
-            Object.entries(sem.backlogCounts).forEach(([k, v]) => {
-                const ki = parseInt(k);
-                if (!backlogMap.has(ki)) backlogMap.set(ki, v);
-            });
-        });
-        const backlogSummary = Array.from(backlogMap.entries())
-            .sort((a, b) => a[0] - b[0])
-            .map(([semester, backlogCount]) => ({ semester, backlogCount }));
+        // Count backlogs from subject-level grades — the only reliable source.
+        // The Sem*BLog columns in the source files are inconsistent:
+        //   - Sem VII file has MOOC titles / gender strings in those columns
+        //   - Sem X file has 0s that overwrite real data from Sem IX
+        // Using subject isBacklog flags (F/FF/I/W/AB grades) is always accurate
+        // and directly matches what is shown in the subject tables.
+        const backlogSummary = sortedSems
+            .map(sem => ({
+                semester: sem.semNo,
+                semLabel: sem.semLabel,
+                backlogCount: sem.subjects.filter(s => s.isBacklog).length,
+            }))
+            .filter(b => b.backlogCount > 0);
 
         const totalActiveBacklogs = backlogSummary.reduce((s, b) => s + b.backlogCount, 0);
 
@@ -214,41 +226,35 @@ function finalise(studentMap) {
 }
 
 // ─── Process MERGED file (one row per subject) ───────────────────────────────
+// PRIMARY KEY = normalised student Name (enrollment is too unreliable)
 function processMergedRows(rawData) {
-    const studentMap = new Map();
-    const nameIndex = new Map();
+    const studentMap = new Map();  // normName → student
 
     rawData.forEach(row => {
-        const enrollment = trim(row['ENROLMENT']);
-        if (!enrollment) return;
-
         const studentName = trim(row['Name']);
+        if (!studentName) return;
+
+        const enrollment = trim(row['ENROLMENT']);
         const normN = normName(studentName);
         const semInt = semToInt(row['SemNo']);
         const sourceFile = trim(row['SourceFile']) || 'unknown file';
 
-        let key = enrollment;
-        if (!studentMap.has(enrollment) && nameIndex.has(normN)) {
-            key = nameIndex.get(normN);
-        }
-
-        if (!studentMap.has(key)) {
-            studentMap.set(key, {
+        if (!studentMap.has(normN)) {
+            studentMap.set(normN, {
                 primaryEnrollment: enrollment,
                 name: studentName,
                 branch: trim(row['CourseName']),
                 semesters: new Map(),
-                enrollmentsByFile: new Map(),   // file → enrollment string
+                enrollmentsByFile: new Map(),
                 duplicateSems: new Set(),
             });
-            nameIndex.set(normN, key);
         }
 
-        const student = studentMap.get(key);
+        const student = studentMap.get(normN);
         if (!student.name && studentName) student.name = studentName;
         if (!student.branch && row['CourseName']) student.branch = trim(row['CourseName']);
 
-        // Track which enrollment was seen in which file
+        // Track which enrollment ID appeared in which source file (for warnings)
         if (!student.enrollmentsByFile.has(sourceFile)) {
             student.enrollmentsByFile.set(sourceFile, enrollment);
         }
@@ -267,26 +273,21 @@ function processMergedRows(rawData) {
 }
 
 // ─── Process SINGLE file (one row per student, up to 5 subjects per row) ─────
+// PRIMARY KEY = normalised student Name
 function processSingleFileRows(rawData) {
-    const studentMap = new Map();
-    const nameIndex = new Map();
+    const studentMap = new Map();  // normName → student
 
     rawData.forEach(row => {
-        const enrollment = trim(row['ENROLMENT']);
-        if (!enrollment) return;
-
         const studentName = trim(row['Name']);
+        if (!studentName) return;
+
+        const enrollment = trim(row['ENROLMENT']);
         const normN = normName(studentName);
         const semInt = semToInt(row['SemNo']);
         const semLabel = trim(row['SemNo']);
 
-        let key = enrollment;
-        if (!studentMap.has(enrollment) && nameIndex.has(normN)) {
-            key = nameIndex.get(normN);
-        }
-
-        if (!studentMap.has(key)) {
-            studentMap.set(key, {
+        if (!studentMap.has(normN)) {
+            studentMap.set(normN, {
                 primaryEnrollment: enrollment,
                 name: studentName,
                 branch: trim(row['CourseName']),
@@ -294,19 +295,15 @@ function processSingleFileRows(rawData) {
                 enrollmentsByFile: new Map(),
                 duplicateSems: new Set(),
             });
-            nameIndex.set(normN, key);
         }
 
-        const student = studentMap.get(key);
+        const student = studentMap.get(normN);
 
-        // Track enrollment per file (the file is the semester file itself)
-        // Use semLabel as a proxy for "file" in single-file mode
-        const fileKey = semLabel || 'unknown';
-        if (!student.enrollmentsByFile.has(fileKey)) {
-            student.enrollmentsByFile.set(fileKey, enrollment);
-        } else if (student.enrollmentsByFile.get(fileKey) !== enrollment) {
-            // Multiple different enrollments within the same semester file
-            student.enrollmentsByFile.set(fileKey + '_alt', enrollment);
+        // Track enrollment per semester (for cross-semester enrollment-mismatch warnings)
+        if (!student.enrollmentsByFile.has(semLabel)) {
+            student.enrollmentsByFile.set(semLabel, enrollment);
+        } else if (student.enrollmentsByFile.get(semLabel) !== enrollment) {
+            student.enrollmentsByFile.set(semLabel + '_alt', enrollment);
         }
 
         const subjects = extractSubjectsFromRow(row);
