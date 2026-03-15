@@ -110,21 +110,25 @@ function extractSubjectRows(raw, sourceFile) {
             SubCode: code,
             SubName: trim(raw[`SubHead${pad}`]),
             Credits: trim(raw[`SubCredit${pad}`]),
-            //── Marks ─────────────────────────────────────────────────────────────
-            TheoryMarks: trim(raw[`Out of (70)E${sfx}`]),
-            MidMarks: trim(raw[`Total(30)M${sfx}`]),
-            VivaMarks: trim(raw[`Practical(50)V${sfx}`]),
-            TotalMarks: trim(raw[`SubMark${pad}`]),
+            //── Marks (each component out of 50; total out of 150) ──────────────
+            TheoryMarks: trim(raw[`Out of (70)E${sfx}`]),   // actual max: 50
+            MidMarks: trim(raw[`Total(30)M${sfx}`]),     // actual max: 50
+            VivaMarks: trim(raw[`Practical(50)V${sfx}`]), // actual max: 50
+            TotalMarks: trim(raw[`SubMark${pad}`]),        // out of 150
             PR_Percent: trim(raw[`PR((tot/150)*100)${sfx}`]),
-            //── Component grades (Theory / Mid / Viva) ────────────────────────────
+            //── Component grades ─────────────────────────────────────────────────
             TheoryGrade: trim(raw[`TGrade${i}`]),
             MidGrade: trim(raw[`MGrade${i}`]),
+            VivaCredits: trim(raw[`VCredits${i}`]),
             VivaGrade: trim(raw[`VGrade${i}`]),
-            //── Subject grade & GP ────────────────────────────────────────────────
+            //── Final result (EM = End-of-Module credit & grade) ─────────────────
+            EMCredits: trim(raw[`EMCredits${i}`]),
+            EMGrade: trim(raw[`EMGrade${i}`]),
+            //── Subject overall grade & GP ───────────────────────────────────────
             SubGrade: trim(raw[`SubGrade${pad}`]),
             GradePoint: trim(raw[`SubGP${pad}`]),
             Comment: trim(raw[`Comment${sfx}`]),
-            //── Semester summary (repeated per subject for filtering convenience) ──
+            //── Semester summary ─────────────────────────────────────────────────
             ...summaryFields,
         };
 
@@ -141,7 +145,8 @@ function extractSubjectRows(raw, sourceFile) {
             Period: period,
             SubCode: '', SubName: '', Credits: '',
             TheoryMarks: '', MidMarks: '', VivaMarks: '', TotalMarks: '', PR_Percent: '',
-            TheoryGrade: '', MidGrade: '', VivaGrade: '',
+            TheoryGrade: '', MidGrade: '', VivaGrade: '', VivaCredits: '',
+            EMCredits: '', EMGrade: '',
             SubGrade: '', GradePoint: '', Comment: '',
             ...summaryFields,
         });
@@ -178,10 +183,10 @@ function main() {
         return;
     }
 
-    // Verify: print unique ENROLMENTs
-    const uniqueEnrollments = new Set(allRows.map(r => r.ENROLMENT));
+    // Verify by Name (the reliable primary identity)
+    const uniqueNames = new Set(allRows.map(r => r.Name.trim().toLowerCase()));
     console.log(`\nTotal merged rows: ${allRows.length}`);
-    console.log(`Unique students by ENROLMENT: ${uniqueEnrollments.size}`);
+    console.log(`Unique students by Name: ${uniqueNames.size}`);
 
     // Sample AGRAWAL check
     const agrawalRows = allRows.filter(r => r.Name && r.Name.toLowerCase().includes('agrawal neha'));
