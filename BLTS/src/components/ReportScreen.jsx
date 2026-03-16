@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
     ArrowLeft, Printer, AlertTriangle, ChevronDown, ChevronUp,
-    BookX, ShieldAlert, Info, CheckCircle2, XCircle
+    BookX, ShieldAlert, Info, CheckCircle2, XCircle, Home
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -340,7 +340,7 @@ function SemesterSection({ sem, defaultOpen = false }) {
 }
 
 // ─── Main Report Screen ───────────────────────────────────────────────────────
-export default function ReportScreen({ student, onBack }) {
+export default function ReportScreen({ student, onBack, onBackToDashboard }) {
     if (!student) return null;
 
     const [showPastSems, setShowPastSems] = useState(false);
@@ -363,10 +363,16 @@ export default function ReportScreen({ student, onBack }) {
             {/* ── Top bar ───────────────────────────────────────────────────── */}
             <div className="bg-white border-b border-slate-200 sticky top-0 z-20 print:hidden">
                 <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-                    <button onClick={onBack} className="flex items-center text-slate-500 hover:text-slate-800 font-medium transition-colors gap-2">
-                        <ArrowLeft className="w-4 h-4" />
-                        Back to Search
-                    </button>
+                    <div className="flex items-center gap-4">
+                        <button onClick={onBack} className="flex items-center text-slate-500 hover:text-slate-800 font-medium transition-colors gap-2">
+                            <ArrowLeft className="w-4 h-4" />
+                            Back to Search
+                        </button>
+                        <button onClick={onBackToDashboard} className="flex items-center text-slate-500 hover:text-slate-800 font-medium transition-colors gap-2">
+                            <Home className="w-4 h-4" />
+                            Dashboard
+                        </button>
+                    </div>
                     <button onClick={() => window.print()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-sm text-sm font-medium transition-colors">
                         <Printer className="w-4 h-4" />
                         Print Full Report
