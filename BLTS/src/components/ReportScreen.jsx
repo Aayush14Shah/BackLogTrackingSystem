@@ -112,8 +112,8 @@ function SubjectTable({ subjects = [], semLabel }) {
     }
 
     return (
-        <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm border-collapse">
+        <div className="overflow-x-auto print:overflow-visible">
+            <table className="w-full text-left text-sm border-collapse print:text-[9px]">
                 <thead>
                     {/* Row 1 – Column group labels */}
                     <tr className="text-[10px] font-bold uppercase tracking-wider text-white bg-slate-600">
@@ -231,8 +231,8 @@ function SemesterSection({ sem, defaultOpen = false }) {
 
     return (
         <div className={cn(
-            'rounded-xl overflow-hidden mb-5 print:mb-6 shadow-sm print:shadow-none',
-            'border print:border-slate-300',
+            'rounded-xl overflow-hidden mb-5 print:mb-6 print:overflow-visible shadow-sm print:shadow-none',
+            'border print:border-slate-300 print:break-inside-avoid',
             failCount > 0 ? 'border-red-200' : 'border-slate-200'
         )}>
             {/* ── Clickable header (screen only) ── */}

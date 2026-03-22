@@ -20,14 +20,15 @@
 
 @media print {
   @page {
-    margin: 1cm;
-    size: A4;
+    margin: 0.6cm 0.5cm;
+    size: A3 landscape;
   }
 
   body {
     background-color: white !important;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+    font-size: 10px;
   }
 
   /* Force background colors to print for badges/chips */
@@ -35,4 +36,42 @@
     print-color-adjust: exact !important;
     -webkit-print-color-adjust: exact !important;
   }
+
+  /* Remove overflow clipping so tables print fully */
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  /* Make tables scale to fit the page width */
+  table {
+    width: 100% !important;
+    table-layout: auto !important;
+    font-size: 9px !important;
+  }
+
+  th, td {
+    padding: 3px 5px !important;
+    white-space: normal !important;
+    word-break: break-word;
+  }
+
+  /* Avoid page breaks inside a semester section */
+  .mb-5, .mb-6 {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Keep table rows together where possible */
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Shrink the profile card and stat chips */
+  .text-3xl { font-size: 1.2rem !important; }
+  .text-2xl { font-size: 1rem !important; }
+  .text-lg   { font-size: 0.9rem !important; }
+
+  /* Hide the sticky top bar and toggle buttons */
+  .sticky { position: static !important; }
 }
