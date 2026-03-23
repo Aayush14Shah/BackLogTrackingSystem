@@ -86,7 +86,7 @@ function extractSubjectsFromRow(row) {
         if (/^Sem-/i.test(code)) continue;
 
         const grade = trim(row[`SubGrade${pad}`]);
-        const gp = num(row[`SubGP${pad}`]) ?? 0;
+        const gp = num(row[`SubGP${pad}`]);
 
         subjects.push({
             code,
@@ -122,7 +122,7 @@ function extractSubjectFromMergedRow(row) {
     if (!code) return null;
 
     const grade = trim(row['SubGrade']);
-    const gp = num(row['GradePoint']) ?? 0;
+    const gp = num(row['GradePoint']);
 
     return {
         code,

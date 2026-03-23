@@ -41,38 +41,223 @@ export const exportToCSV = (data, filename = 'student_data.csv') => {
   downloadFile(csvContent, filename, 'text/csv');
 };
 
+const FAIL_GRADES = new Set(['F', 'FF', 'I', 'W', 'AB']);
+
+/**
+ * For a backlog subject, returns which components failed.
+ * e.g. "External, Viva" or "Internal" or "External"
+ */
+function getFailedComponents(sub) {
+  const parts = [];
+  const tg = (sub.theoryGrade || '').trim().toUpperCase();
+  const mg = (sub.midGrade || '').trim().toUpperCase();
+  const vg = (sub.vivaGrade || '').trim().toUpperCase();
+  if (tg && FAIL_GRADES.has(tg)) parts.push('External');
+  if (mg && FAIL_GRADES.has(mg)) parts.push('Internal');
+  if (vg && FAIL_GRADES.has(vg)) parts.push('Viva');
+  // If no component grade is individually flagged but subject is still a backlog,
+  // fall back to the overall sub grade label
+  if (parts.length === 0 && sub.isBacklog) parts.push(sub.subGrade || 'Failed');
+  return parts.join(', ');
+}
+
+// Sub-columns rendered per subject (matching reference tabulation format)
+const SUB_COLS = ['Internal(50)', 'External(50)', 'Viva(50)', 'Total', 'Credit', 'Grade', 'Grade Point', 'Comment'];
+
 export const exportToExcel = (data, filename = 'student_data.xlsx') => {
   if (!data || data.length === 0) {
     console.warn('No data to export');
     return;
   }
 
-  // Prepare data for Excel export
-  const flattenedData = data.map(student => ({
-    'Name': student.name || '',
-    'Enrollment No': student.enrollmentNo || '',
-    'Branch': student.branch || '',
-    'Latest Semester': student.latestSemNo || '',
-    'Latest SPI': student.latestSPI || '',
-    'Overall Status': student.overallStatus || '',
-    'Active Backlogs': student.totalActiveBacklogs || 0,
-    'Semesters on Record': student.semesters?.length || 0,
-    'Latest Result': student.latestResult || ''
-  }));
+  // ── Collect ALL unique subjects (not just backlogs) sorted by sem then code ─
+  const subjectMap = new Map(); // code → { code, name, semInt }
+  data.forEach(student => {
+    student.semesters?.forEach(sem => {
+      const semInt = parseInt(String(sem.semLabel || sem.semNo).replace(/\D/g, '')) || 0;
+      sem.subjects?.forEach(sub => {
+        if (sub.code && !subjectMap.has(sub.code)) {
+          subjectMap.set(sub.code, {
+            code: sub.code,
+            name: sub.name || sub.code,
+            semInt,
+            semLabel: sem.semLabel || sem.semNo,
+          });
+        }
+      });
+    });
+  });
 
-  // Create workbook
-  const ws = XLSX.utils.json_to_sheet(flattenedData);
+  const allSubjects = [...subjectMap.values()].sort((a, b) =>
+    a.semInt !== b.semInt ? a.semInt - b.semInt : a.code.localeCompare(b.code)
+  );
+
+  // ── Fixed columns ─────────────────────────────────────────────────────────
+  const FIXED = ['#', 'Enrollment No', 'Student Name', 'Active Backlogs', 'Latest SPI', 'Sem'];
+  const fixedCount = FIXED.length;
+  const subColCount = SUB_COLS.length;
+
+  const aoa = [];
+
+  // ── Row 0: college/branch header ──────────────────────────────────────────
+  const collegeName = data[0]?.branch || 'Student Result Tabulation';
+  const hdr0 = [collegeName, ...Array(FIXED.length - 1 + allSubjects.length * subColCount).fill('')];
+  aoa.push(hdr0);
+
+  // ── Row 1: subject name headers (merged across SUB_COLS each) ─────────────
+  const hdr1 = FIXED.map((f, i) => (i === 0 ? f : ''));
+  FIXED.forEach((f, i) => { hdr1[i] = f; });
+  allSubjects.forEach(({ code, name, semLabel }) => {
+    hdr1.push(`${name} (${code}) — Sem ${semLabel}`);
+    for (let i = 1; i < subColCount; i++) hdr1.push('');
+  });
+  aoa.push(hdr1);
+
+  // ── Row 2: sub-column labels ───────────────────────────────────────────────
+  const hdr2 = FIXED.map(() => '');
+  allSubjects.forEach(() => SUB_COLS.forEach(sc => hdr2.push(sc)));
+  aoa.push(hdr2);
+
+  // ── Data rows ─────────────────────────────────────────────────────────────
+  data.forEach((student, idx) => {
+    // Build lookup: subjectCode → subject
+    const subLookup = new Map();
+    student.semesters?.forEach(sem => {
+      sem.subjects?.forEach(sub => {
+        if (sub.code) subLookup.set(sub.code, sub);
+      });
+    });
+
+    const row = [
+      idx + 1,
+      student.enrollmentNo || '',
+      student.name || '',
+      student.totalActiveBacklogs ?? 0,
+      student.latestSPI || '',
+      student.latestSemNo ? `Sem ${student.latestSemNo}` : '',
+    ];
+
+    allSubjects.forEach(({ code }) => {
+      const sub = subLookup.get(code);
+      if (sub) {
+        // midMarks = Internal/CEC, theoryMarks = External, vivaMarks = Viva/Practical
+        const mid   = sub.midMarks   !== '' && sub.midMarks   != null ? sub.midMarks   : '';
+        const ext   = sub.theoryMarks !== '' && sub.theoryMarks != null ? sub.theoryMarks : '';
+        const viva  = sub.vivaMarks  !== '' && sub.vivaMarks  != null ? sub.vivaMarks  : '';
+        const total = sub.totalMarks !== '' && sub.totalMarks != null ? sub.totalMarks : '';
+        row.push(
+          mid,
+          ext,
+          viva,
+          total,
+          sub.credits   ?? '',
+          sub.subGrade  || '',
+          sub.gradePoint != null ? sub.gradePoint : '',
+          sub.comment   || '',
+        );
+      } else {
+        for (let i = 0; i < subColCount; i++) row.push('');
+      }
+    });
+
+    aoa.push(row);
+  });
+
+  // ── Build worksheet ────────────────────────────────────────────────────────
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // ── Merges ────────────────────────────────────────────────────────────────
+  const merges = [];
+
+  // Row 0: college name spans entire width
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: fixedCount + allSubjects.length * subColCount - 1 } });
+
+  // Row 1 fixed cols: merge vertically with row 2
+  FIXED.forEach((_, ci) => {
+    merges.push({ s: { r: 1, c: ci }, e: { r: 2, c: ci } });
+  });
+
+  // Row 1 subject headers: merge horizontally across SUB_COLS
+  allSubjects.forEach((_, si) => {
+    const startCol = fixedCount + si * subColCount;
+    merges.push({ s: { r: 1, c: startCol }, e: { r: 1, c: startCol + subColCount - 1 } });
+  });
+
+  ws['!merges'] = merges;
+
+  // ── Column widths ─────────────────────────────────────────────────────────
+  const colWidths = [
+    { wch: 5 },   // #
+    { wch: 20 },  // Enrollment
+    { wch: 30 },  // Name
+    { wch: 14 },  // Active Backlogs
+    { wch: 10 },  // SPI
+    { wch: 8 },   // Sem
+  ];
+  allSubjects.forEach(() => {
+    SUB_COLS.forEach(sc => colWidths.push({ wch: Math.max(sc.length + 2, 10) }));
+  });
+  ws['!cols'] = colWidths;
+
+  // ── Freeze header rows + fixed columns ────────────────────────────────────
+  ws['!freeze'] = { xSplit: fixedCount, ySplit: 3 };
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Student Data');
+  XLSX.utils.book_append_sheet(wb, ws, 'Result Tabulation');
 
-  // Add summary sheet if there's data
-  if (data.length > 0) {
-    const summaryData = generateSummaryData(data);
-    const summaryWs = XLSX.utils.json_to_sheet(summaryData);
-    XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+  // ── Sheet 2: Backlog Summary ───────────────────────────────────────────────
+  // Only backlog students, showing which subjects they failed
+  const backlogStudents = data.filter(s => s.totalActiveBacklogs > 0);
+  if (backlogStudents.length > 0) {
+    const backlogSubjects = allSubjects.filter(({ code }) =>
+      data.some(student =>
+        student.semesters?.some(sem =>
+          sem.subjects?.some(sub => sub.code === code && sub.isBacklog)
+        )
+      )
+    );
+
+    const bAoa = [];
+    const bHdr1 = ['#', 'Enrollment No', 'Student Name', 'Active Backlogs'];
+    backlogSubjects.forEach(({ code, name }) => bHdr1.push(`${code} — ${name}`, '', '', ''));
+    bAoa.push(bHdr1);
+
+    const bHdr2 = ['', '', '', ''];
+    backlogSubjects.forEach(() => ['Grade', 'Grade Point', 'Comment', 'Failed In'].forEach(h => bHdr2.push(h)));
+    bAoa.push(bHdr2);
+
+    backlogStudents.forEach((student, idx) => {
+      const subLookup = new Map();
+      student.semesters?.forEach(sem => {
+        sem.subjects?.forEach(sub => { if (sub.code) subLookup.set(sub.code, sub); });
+      });
+
+      const row = [idx + 1, student.enrollmentNo || '', student.name || '', student.totalActiveBacklogs ?? 0];
+      backlogSubjects.forEach(({ code }) => {
+        const sub = subLookup.get(code);
+        if (sub && sub.isBacklog) {
+          row.push(sub.subGrade || '', sub.gradePoint != null ? sub.gradePoint : '', sub.comment || '', getFailedComponents(sub));
+        } else {
+          row.push('', '', '', '');
+        }
+      });
+      bAoa.push(row);
+    });
+
+    const bWs = XLSX.utils.aoa_to_sheet(bAoa);
+    const bMerges = [];
+    backlogSubjects.forEach((_, si) => {
+      const startCol = 4 + si * 4;
+      bMerges.push({ s: { r: 0, c: startCol }, e: { r: 0, c: startCol + 3 } });
+    });
+    bWs['!merges'] = bMerges;
+    XLSX.utils.book_append_sheet(wb, bWs, 'Backlog Summary');
   }
 
-  // Write file
+  // ── Sheet 3: Stats ────────────────────────────────────────────────────────
+  const summaryWs = XLSX.utils.json_to_sheet(generateSummaryData(data));
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'Stats');
+
   XLSX.writeFile(wb, filename);
 };
 
