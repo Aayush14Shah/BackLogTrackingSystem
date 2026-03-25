@@ -3,6 +3,7 @@ import {
   Search,
   FileSpreadsheet,
   XCircle,
+  AlertTriangle,
   Users,
   CheckCircle,
   ArrowLeft,
@@ -65,12 +66,13 @@ function FilterBar({ filters, onFilterChange, onReset, departments, semesters, d
   // As requested, ONLY keep 'All Students' and 'All Clear' in the Status buttons.
   // We handle dashboard-injected filters (detained/backlog) gracefully visually, but they aren't explicit permanent buttons.
   const statusOptions = [
-    { value: 'all',   label: 'All Students', icon: Users,       active: 'bg-slate-800 text-white border-slate-800 shadow' },
-    { value: 'clear', label: 'All Clear',    icon: CheckCircle, active: 'bg-emerald-600 text-white border-emerald-600 shadow' },
+    { value: 'all',      label: 'All Students', icon: Users,          active: 'bg-slate-800 text-white border-slate-800 shadow' },
+    { value: 'backlog',  label: 'Backlogs',     icon: AlertTriangle, active: 'bg-amber-500 text-white border-amber-500 shadow' },
+    { value: 'detained', label: 'Detained',     icon: XCircle,       active: 'bg-red-600 text-white border-red-600 shadow' },
+    { value: 'clear',    label: 'All Clear',    icon: CheckCircle,   active: 'bg-emerald-600 text-white border-emerald-600 shadow' },
   ];
 
-  // If dashboard sets a filter we don't have a button for, we display a special "dashboard mode" pill
-  const showDashboardPill = filters.status === 'detained' || filters.status === 'backlog';
+
 
   const activeCount = [
     filters.status !== 'all',
@@ -122,12 +124,6 @@ function FilterBar({ filters, onFilterChange, onReset, departments, semesters, d
                 );
               })}
               
-              {showDashboardPill && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-100 border border-blue-200 text-blue-800 text-sm font-bold shadow-sm">
-                  <span>Dashboard: {filters.status === 'detained' ? 'Detained' : 'Backlogs'}</span>
-                  <button onClick={() => onFilterChange('status', 'all')} className="ml-1 text-blue-500 hover:text-blue-900 rounded-full bg-blue-200 p-0.5"><XCircle className="w-3.5 h-3.5"/></button>
-                </div>
-              )}
             </div>
           </div>
 
@@ -323,7 +319,7 @@ export default function EnhancedSearchScreen({
     if (filters.status !== 'all') {
       list = list.filter(s => {
         if (filters.status === 'clear')    return s.totalActiveBacklogs === 0;
-        if (filters.status === 'backlog')  return s.totalActiveBacklogs > 0 && s.overallStatus !== 'DETAINED';
+        if (filters.status === 'backlog')  return s.totalActiveBacklogs > 0;
         if (filters.status === 'detained') return s.overallStatus === 'DETAINED';
         return true;
       });
@@ -399,8 +395,8 @@ export default function EnhancedSearchScreen({
 
   const handlePrint = () => window.print();
 
-  const handleExport = () => {
-    exportToExcel(filteredStudents, `students_export_${new Date().toISOString().split('T')[0]}.xlsx`);
+  const handleExport = async () => {
+    await exportToExcel(filteredStudents, `students_export_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (

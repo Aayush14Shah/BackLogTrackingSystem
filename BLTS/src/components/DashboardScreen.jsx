@@ -412,13 +412,13 @@ export default function DashboardScreen({ students = [], onNavigate, fileName })
     return alerts;
   }, [metrics, students]);
 
-  const handleExportBacklog = () => {
+  const handleExportBacklog = async () => {
     const backlogStudents = students.filter(s => s.totalActiveBacklogs > 0);
-    exportToExcel(backlogStudents, 'backlog_students.xlsx');
+    await exportToExcel(backlogStudents, 'backlog_students.xlsx');
   };
 
-  const handleExportAll = () => {
-    exportToExcel(students, 'all_students.xlsx');
+  const handleExportAll = async () => {
+    await exportToExcel(students, 'all_students.xlsx');
   };
 
   // Date for header

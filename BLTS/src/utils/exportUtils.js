@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 // Utility functions for exporting data in different formats
 
@@ -64,14 +65,29 @@ function getFailedComponents(sub) {
 // Sub-columns rendered per subject (matching reference tabulation format)
 const SUB_COLS = ['Internal(50)', 'External(50)', 'Viva(50)', 'Total', 'Credit', 'Grade', 'Grade Point', 'Comment'];
 
-export const exportToExcel = (data, filename = 'student_data.xlsx') => {
+// ── Border style helper ────────────────────────────────────────────────────
+const THIN_BORDER = {
+  top:    { style: 'thin' },
+  left:   { style: 'thin' },
+  bottom: { style: 'thin' },
+  right:  { style: 'thin' },
+};
+
+// Apply thin border to every cell in a row (ExcelJS row object)
+function applyBorderToRow(row) {
+  row.eachCell({ includeEmpty: true }, cell => {
+    cell.border = THIN_BORDER;
+  });
+}
+
+export const exportToExcel = async (data, filename = 'student_data.xlsx') => {
   if (!data || data.length === 0) {
     console.warn('No data to export');
     return;
   }
 
-  // ── Collect ALL unique subjects (not just backlogs) sorted by sem then code ─
-  const subjectMap = new Map(); // code → { code, name, semInt }
+  // ── Collect ALL unique subjects sorted by sem then code ───────────────────
+  const subjectMap = new Map();
   data.forEach(student => {
     student.semesters?.forEach(sem => {
       const semInt = parseInt(String(sem.semLabel || sem.semNo).replace(/\D/g, '')) || 0;
@@ -92,121 +108,172 @@ export const exportToExcel = (data, filename = 'student_data.xlsx') => {
     a.semInt !== b.semInt ? a.semInt - b.semInt : a.code.localeCompare(b.code)
   );
 
-  // ── Fixed columns ─────────────────────────────────────────────────────────
-  const FIXED = ['#', 'Enrollment No', 'Student Name', 'Active Backlogs', 'Latest SPI', 'Sem'];
-  const fixedCount = FIXED.length;
   const subColCount = SUB_COLS.length;
 
-  const aoa = [];
+  // ── Fixed columns: Sem removed; Active Backlogs & Latest SPI at end ───────
+  // Layout: # | Enrollment No | Student Name | [subjects...] | Active Backlogs | Latest SPI
+  const PREFIX_FIXED = ['#', 'Enrollment No', 'Student Name'];
+  const SUFFIX_FIXED = ['Active Backlogs', 'Latest SPI'];
+  const prefixCount  = PREFIX_FIXED.length;
+  const suffixCount  = SUFFIX_FIXED.length;
+  const totalCols    = prefixCount + allSubjects.length * subColCount + suffixCount;
 
-  // ── Row 0: college/branch header ──────────────────────────────────────────
+  // ── ExcelJS workbook ───────────────────────────────────────────────────────
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Result Tabulation');
+
+  // ── Column widths ──────────────────────────────────────────────────────────
+  const colDefs = [
+    { width: 5  },  // #
+    { width: 22 },  // Enrollment No
+    { width: 32 },  // Student Name
+  ];
+  allSubjects.forEach(() => SUB_COLS.forEach(sc => colDefs.push({ width: Math.max(sc.length + 2, 11) })));
+  colDefs.push({ width: 16 }); // Active Backlogs
+  colDefs.push({ width: 12 }); // Latest SPI
+  ws.columns = colDefs;
+
+  // ── Row 0: title spanning full width ──────────────────────────────────────
   const collegeName = data[0]?.branch || 'Student Result Tabulation';
-  const hdr0 = [collegeName, ...Array(FIXED.length - 1 + allSubjects.length * subColCount).fill('')];
-  aoa.push(hdr0);
+  const titleRow = ws.addRow([collegeName]);
+  ws.mergeCells(1, 1, 1, totalCols);
+  titleRow.getCell(1).font      = { bold: true, size: 13 };
+  titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+  titleRow.getCell(1).fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+  titleRow.getCell(1).font      = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+  titleRow.getCell(1).border    = THIN_BORDER;
+  titleRow.height = 24;
 
-  // ── Row 1: subject name headers (merged across SUB_COLS each) ─────────────
-  const hdr1 = FIXED.map((f, i) => (i === 0 ? f : ''));
-  FIXED.forEach((f, i) => { hdr1[i] = f; });
+  // ── Row 1: prefix fixed + subject name headers (merged) + suffix fixed ────
+  const hdr1Values = [...PREFIX_FIXED];
   allSubjects.forEach(({ code, name, semLabel }) => {
-    hdr1.push(`${name} (${code}) — Sem ${semLabel}`);
-    for (let i = 1; i < subColCount; i++) hdr1.push('');
+    hdr1Values.push(`${name} (${code}) — Sem ${semLabel}`);
+    for (let i = 1; i < subColCount; i++) hdr1Values.push(null);
   });
-  aoa.push(hdr1);
+  SUFFIX_FIXED.forEach(h => hdr1Values.push(h));
+
+  const hdr1Row = ws.addRow(hdr1Values);
+  hdr1Row.height = 40;
+
+  // Style prefix + suffix fixed header cells (row 1, merge with row 2 later)
+  [...Array(prefixCount).keys()].forEach(ci => {
+    const cell = hdr1Row.getCell(ci + 1);
+    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C5282' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border    = THIN_BORDER;
+  });
+  SUFFIX_FIXED.forEach((_, si) => {
+    const colIdx = prefixCount + allSubjects.length * subColCount + si + 1;
+    const cell = hdr1Row.getCell(colIdx);
+    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C5282' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border    = THIN_BORDER;
+  });
+
+  // Style + merge subject name header cells
+  allSubjects.forEach((_, si) => {
+    const startCol = prefixCount + si * subColCount + 1; // 1-indexed
+    const endCol   = startCol + subColCount - 1;
+    if (subColCount > 1) ws.mergeCells(2, startCol, 2, endCol);
+    const cell = hdr1Row.getCell(startCol);
+    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4A628A' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border    = THIN_BORDER;
+    // Apply border to the rest of the merged range cells too
+    for (let c = startCol + 1; c <= endCol; c++) {
+      hdr1Row.getCell(c).border = THIN_BORDER;
+    }
+  });
 
   // ── Row 2: sub-column labels ───────────────────────────────────────────────
-  const hdr2 = FIXED.map(() => '');
-  allSubjects.forEach(() => SUB_COLS.forEach(sc => hdr2.push(sc)));
-  aoa.push(hdr2);
+  const hdr2Values = [null, null, null]; // prefix fixed — merged with row above
+  allSubjects.forEach(() => SUB_COLS.forEach(sc => hdr2Values.push(sc)));
+  hdr2Values.push(null, null); // suffix fixed — merged with row above
+
+  const hdr2Row = ws.addRow(hdr2Values);
+  hdr2Row.height = 36;
+
+  // Merge prefix/suffix fixed header cells vertically (rows 1–2)
+  [...Array(prefixCount).keys()].forEach(ci => {
+    ws.mergeCells(2, ci + 1, 3, ci + 1);
+    hdr2Row.getCell(ci + 1).border = THIN_BORDER;
+  });
+  SUFFIX_FIXED.forEach((_, si) => {
+    const colIdx = prefixCount + allSubjects.length * subColCount + si + 1;
+    ws.mergeCells(2, colIdx, 3, colIdx);
+    hdr2Row.getCell(colIdx).border = THIN_BORDER;
+  });
+
+  // Style sub-column label cells
+  allSubjects.forEach((_, si) => {
+    const startCol = prefixCount + si * subColCount + 1;
+    for (let c = 0; c < subColCount; c++) {
+      const cell = hdr2Row.getCell(startCol + c);
+      cell.value     = SUB_COLS[c];
+      cell.font      = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF385F8B' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border    = THIN_BORDER;
+    }
+  });
+
+  // Freeze top 3 rows + prefix fixed columns
+  ws.views = [{ state: 'frozen', xSplit: prefixCount, ySplit: 3 }];
 
   // ── Data rows ─────────────────────────────────────────────────────────────
   data.forEach((student, idx) => {
-    // Build lookup: subjectCode → subject
     const subLookup = new Map();
     student.semesters?.forEach(sem => {
-      sem.subjects?.forEach(sub => {
-        if (sub.code) subLookup.set(sub.code, sub);
-      });
+      sem.subjects?.forEach(sub => { if (sub.code) subLookup.set(sub.code, sub); });
     });
 
-    const row = [
+    const rowValues = [
       idx + 1,
       student.enrollmentNo || '',
       student.name || '',
-      student.totalActiveBacklogs ?? 0,
-      student.latestSPI || '',
-      student.latestSemNo ? `Sem ${student.latestSemNo}` : '',
     ];
 
     allSubjects.forEach(({ code }) => {
       const sub = subLookup.get(code);
       if (sub) {
-        // midMarks = Internal/CEC, theoryMarks = External, vivaMarks = Viva/Practical
         const mid   = sub.midMarks   !== '' && sub.midMarks   != null ? sub.midMarks   : '';
         const ext   = sub.theoryMarks !== '' && sub.theoryMarks != null ? sub.theoryMarks : '';
         const viva  = sub.vivaMarks  !== '' && sub.vivaMarks  != null ? sub.vivaMarks  : '';
         const total = sub.totalMarks !== '' && sub.totalMarks != null ? sub.totalMarks : '';
-        row.push(
-          mid,
-          ext,
-          viva,
-          total,
-          sub.credits   ?? '',
-          sub.subGrade  || '',
-          sub.gradePoint != null ? sub.gradePoint : '',
-          sub.comment   || '',
-        );
+        rowValues.push(mid, ext, viva, total, sub.credits ?? '', sub.subGrade || '', sub.gradePoint != null ? sub.gradePoint : '', sub.comment || '');
       } else {
-        for (let i = 0; i < subColCount; i++) row.push('');
+        for (let i = 0; i < subColCount; i++) rowValues.push('');
       }
     });
 
-    aoa.push(row);
+    // Suffix: Active Backlogs, Latest SPI
+    rowValues.push(student.totalActiveBacklogs ?? 0, student.latestSPI || '');
+
+    const dataRow = ws.addRow(rowValues);
+    dataRow.height = 18;
+
+    // Alternate row fill
+    const fillColor = idx % 2 === 0 ? 'FFFAFAFA' : 'FFFFFFFF';
+    dataRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      if (!cell.fill || cell.fill.type === 'none') {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillColor } };
+      }
+      cell.border    = THIN_BORDER;
+      cell.alignment = { vertical: 'middle' };
+
+      // Highlight backlog count cell if > 0
+      const activeBacklogsCol = prefixCount + allSubjects.length * subColCount + 1;
+      if (colNumber === activeBacklogsCol && (student.totalActiveBacklogs ?? 0) > 0) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+        cell.font = { bold: true, color: { argb: 'FFDC2626' } };
+      }
+    });
   });
 
-  // ── Build worksheet ────────────────────────────────────────────────────────
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-  // ── Merges ────────────────────────────────────────────────────────────────
-  const merges = [];
-
-  // Row 0: college name spans entire width
-  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: fixedCount + allSubjects.length * subColCount - 1 } });
-
-  // Row 1 fixed cols: merge vertically with row 2
-  FIXED.forEach((_, ci) => {
-    merges.push({ s: { r: 1, c: ci }, e: { r: 2, c: ci } });
-  });
-
-  // Row 1 subject headers: merge horizontally across SUB_COLS
-  allSubjects.forEach((_, si) => {
-    const startCol = fixedCount + si * subColCount;
-    merges.push({ s: { r: 1, c: startCol }, e: { r: 1, c: startCol + subColCount - 1 } });
-  });
-
-  ws['!merges'] = merges;
-
-  // ── Column widths ─────────────────────────────────────────────────────────
-  const colWidths = [
-    { wch: 5 },   // #
-    { wch: 20 },  // Enrollment
-    { wch: 30 },  // Name
-    { wch: 14 },  // Active Backlogs
-    { wch: 10 },  // SPI
-    { wch: 8 },   // Sem
-  ];
-  allSubjects.forEach(() => {
-    SUB_COLS.forEach(sc => colWidths.push({ wch: Math.max(sc.length + 2, 10) }));
-  });
-  ws['!cols'] = colWidths;
-
-  // ── Freeze header rows + fixed columns ────────────────────────────────────
-  ws['!freeze'] = { xSplit: fixedCount, ySplit: 3 };
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Result Tabulation');
-
-  // ── Sheet 2: Backlog Summary ───────────────────────────────────────────────
-  // Only backlog students, showing which subjects they failed
+  // ── Sheet 2: Backlog Summary (uses original XLSX for simplicity) ───────────
   const backlogStudents = data.filter(s => s.totalActiveBacklogs > 0);
   if (backlogStudents.length > 0) {
     const backlogSubjects = allSubjects.filter(({ code }) =>
@@ -217,48 +284,91 @@ export const exportToExcel = (data, filename = 'student_data.xlsx') => {
       )
     );
 
-    const bAoa = [];
-    const bHdr1 = ['#', 'Enrollment No', 'Student Name', 'Active Backlogs'];
-    backlogSubjects.forEach(({ code, name }) => bHdr1.push(`${code} — ${name}`, '', '', ''));
-    bAoa.push(bHdr1);
+    const bWs = wb.addWorksheet('Backlog Summary');
+    const bColDefs = [{ width: 5 }, { width: 22 }, { width: 32 }, { width: 16 }];
+    backlogSubjects.forEach(() => ['Grade', 'Grade Point', 'Comment', 'Failed In'].forEach(() => bColDefs.push({ width: 14 })));
+    bWs.columns = bColDefs;
 
-    const bHdr2 = ['', '', '', ''];
-    backlogSubjects.forEach(() => ['Grade', 'Grade Point', 'Comment', 'Failed In'].forEach(h => bHdr2.push(h)));
-    bAoa.push(bHdr2);
+    const bHdr1Values = ['#', 'Enrollment No', 'Student Name', 'Active Backlogs'];
+    backlogSubjects.forEach(({ code, name }) => { bHdr1Values.push(`${code} — ${name}`); for (let i = 1; i < 4; i++) bHdr1Values.push(null); });
+    const bHdr1Row = bWs.addRow(bHdr1Values);
+    bHdr1Row.height = 36;
+    // Merge subject header cells
+    backlogSubjects.forEach((_, si) => {
+      const sc = 4 + si * 4 + 1;
+      if (4 > 1) bWs.mergeCells(1, sc, 1, sc + 3);
+      const cell = bHdr1Row.getCell(sc);
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C5282' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      for (let c = sc; c <= sc + 3; c++) bHdr1Row.getCell(c).border = THIN_BORDER;
+    });
+    // Style fixed header cells
+    [1,2,3,4].forEach(ci => {
+      const cell = bHdr1Row.getCell(ci);
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C5282' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = THIN_BORDER;
+    });
+
+    const bHdr2Values = [null, null, null, null];
+    backlogSubjects.forEach(() => ['Grade', 'Grade Point', 'Comment', 'Failed In'].forEach(h => bHdr2Values.push(h)));
+    const bHdr2Row = bWs.addRow(bHdr2Values);
+    bHdr2Row.height = 22;
+    [1,2,3,4].forEach(ci => { bWs.mergeCells(1, ci, 2, ci); bHdr2Row.getCell(ci).border = THIN_BORDER; });
+    backlogSubjects.forEach((_, si) => {
+      const sc = 4 + si * 4 + 1;
+      for (let c = 0; c < 4; c++) {
+        const cell = bHdr2Row.getCell(sc + c);
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF385F8B' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = THIN_BORDER;
+      }
+    });
 
     backlogStudents.forEach((student, idx) => {
       const subLookup = new Map();
-      student.semesters?.forEach(sem => {
-        sem.subjects?.forEach(sub => { if (sub.code) subLookup.set(sub.code, sub); });
-      });
-
+      student.semesters?.forEach(sem => sem.subjects?.forEach(sub => { if (sub.code) subLookup.set(sub.code, sub); }));
       const row = [idx + 1, student.enrollmentNo || '', student.name || '', student.totalActiveBacklogs ?? 0];
       backlogSubjects.forEach(({ code }) => {
         const sub = subLookup.get(code);
-        if (sub && sub.isBacklog) {
-          row.push(sub.subGrade || '', sub.gradePoint != null ? sub.gradePoint : '', sub.comment || '', getFailedComponents(sub));
-        } else {
-          row.push('', '', '', '');
-        }
+        if (sub && sub.isBacklog) row.push(sub.subGrade || '', sub.gradePoint != null ? sub.gradePoint : '', sub.comment || '', getFailedComponents(sub));
+        else row.push('', '', '', '');
       });
-      bAoa.push(row);
+      const bDataRow = bWs.addRow(row);
+      bDataRow.height = 18;
+      bDataRow.eachCell({ includeEmpty: true }, cell => { cell.border = THIN_BORDER; cell.alignment = { vertical: 'middle' }; });
     });
-
-    const bWs = XLSX.utils.aoa_to_sheet(bAoa);
-    const bMerges = [];
-    backlogSubjects.forEach((_, si) => {
-      const startCol = 4 + si * 4;
-      bMerges.push({ s: { r: 0, c: startCol }, e: { r: 0, c: startCol + 3 } });
-    });
-    bWs['!merges'] = bMerges;
-    XLSX.utils.book_append_sheet(wb, bWs, 'Backlog Summary');
   }
 
   // ── Sheet 3: Stats ────────────────────────────────────────────────────────
-  const summaryWs = XLSX.utils.json_to_sheet(generateSummaryData(data));
-  XLSX.utils.book_append_sheet(wb, summaryWs, 'Stats');
+  const statsData = generateSummaryData(data);
+  const statsWs = wb.addWorksheet('Stats');
+  statsWs.columns = [{ width: 30 }, { width: 15 }];
+  const statsHdr = statsWs.addRow(['Metric', 'Value']);
+  statsHdr.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C5282' } };
+    cell.border = THIN_BORDER;
+  });
+  statsData.forEach(item => {
+    const r = statsWs.addRow([item['Metric'], item['Value']]);
+    r.eachCell({ includeEmpty: true }, cell => { cell.border = THIN_BORDER; });
+  });
 
-  XLSX.writeFile(wb, filename);
+  // ── Write file ────────────────────────────────────────────────────────────
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url  = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };
 
 export const printSelectedStudents = (students) => {
@@ -459,7 +569,7 @@ const generatePrintContent = (students) => {
 };
 
 // Export individual student report
-export const exportStudentReport = (student, format = 'print') => {
+export const exportStudentReport = async (student, format = 'print') => {
   if (!student) {
     console.warn('No student data provided');
     return;
@@ -473,7 +583,7 @@ export const exportStudentReport = (student, format = 'print') => {
       exportToCSV([student], `${student.name}_report.csv`);
       break;
     case 'excel':
-      exportToExcel([student], `${student.name}_report.xlsx`);
+      await exportToExcel([student], `${student.name}_report.xlsx`);
       break;
     default:
       console.warn('Unsupported export format:', format);
