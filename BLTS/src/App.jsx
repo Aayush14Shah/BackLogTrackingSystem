@@ -1,27 +1,22 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import UploadScreen from './components/UploadScreen';
 import EnhancedSearchScreen from './components/EnhancedSearchScreen';
-import ReportScreen from './components/ReportScreen';
 import DashboardScreen from './components/DashboardScreen';
-import { parseFile } from './utils/parseExcel';
+import JourneyReport from './components/JourneyReport/JourneyReport';
+import { buildStudents } from './services/studentBuilder';
 
 function App() {
-  const [appState, setAppState] = useState('upload'); // 'upload', 'dashboard', 'search', 'report'
+  const [appState, setAppState] = useState('upload'); // 'upload' | 'dashboard' | 'search' | 'report'
   const [studentsData, setStudentsData] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [fileName, setFileName] = useState('');
   const [searchFilters, setSearchFilters] = useState({});
 
-  const handleFileLoaded = async (file) => {
-    try {
-      const parsedData = await parseFile(file);
-      setStudentsData(parsedData);
-      setFileName(file.name);
-      setAppState('dashboard');
-    } catch (error) {
-      console.error(error);
-      throw error; // Let UploadScreen handle showing the error
-    }
+  const handleFileLoaded = async (files) => {
+    const parsedData = await buildStudents(Array.isArray(files) ? files : [files]);
+    setStudentsData(parsedData);
+    setFileName(Array.isArray(files) ? `${files.length} files loaded` : files.name);
+    setAppState('dashboard');
   };
 
   const handleStudentSelect = (student) => {
@@ -49,28 +44,18 @@ function App() {
 
   const handleNavigate = (destination, filters = {}) => {
     setSearchFilters(filters);
-    
     switch (destination) {
-      case 'upload':
-        handleResetFile();
-        break;
-      case 'dashboard':
-        setAppState('dashboard');
-        break;
+      case 'upload':     handleResetFile(); break;
+      case 'dashboard':  setAppState('dashboard'); break;
       case 'students':
-        setAppState('search');
-        break;
-      case 'departments':
-        setAppState('search');
-        break;
+      case 'departments': setAppState('search'); break;
       case 'report':
         if (filters.student) {
           setSelectedStudent(filters.student);
           setAppState('report');
         }
         break;
-      default:
-        console.warn('Unknown navigation destination:', destination);
+      default: break;
     }
   };
 
@@ -79,7 +64,6 @@ function App() {
       {appState === 'upload' && (
         <UploadScreen onFileLoaded={handleFileLoaded} />
       )}
-
       {appState === 'dashboard' && (
         <DashboardScreen
           students={studentsData}
@@ -87,7 +71,6 @@ function App() {
           fileName={fileName}
         />
       )}
-
       {appState === 'search' && (
         <EnhancedSearchScreen
           students={studentsData}
@@ -98,9 +81,8 @@ function App() {
           onBackToDashboard={handleBackToDashboard}
         />
       )}
-
       {appState === 'report' && selectedStudent && (
-        <ReportScreen
+        <JourneyReport
           student={selectedStudent}
           onBack={handleBackToSearch}
           onBackToDashboard={handleBackToDashboard}

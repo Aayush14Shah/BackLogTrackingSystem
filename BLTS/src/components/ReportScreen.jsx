@@ -251,10 +251,10 @@ function SemesterSection({ sem, defaultOpen = false }) {
                         : <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
 
                     <span className="font-bold text-slate-800 text-base">
-                        Semester {sem.semLabel || sem.semNo}
+                        {sem.attemptLabel || `Semester ${sem.semLabel || sem.semNo}`}
                     </span>
 
-                    {sem.period && (
+                    {sem.period && !sem.attemptLabel && (
                         <span className="text-xs text-slate-400 font-normal">{sem.period}</span>
                     )}
 
@@ -429,6 +429,75 @@ export default function ReportScreen({ student, onBack, onBackToDashboard }) {
                                 Sem {s.semester}: {s.backlogCount} backlog{s.backlogCount > 1 ? 's' : ''}
                             </span>
                         ))}
+                    </div>
+                )}
+
+                {/* ── Attempt Timeline ──────────────────────────────────────── */}
+                {student.timeline && student.timeline.length > 0 && (
+                    <div className="mb-8">
+                        <h2 className="text-lg font-bold text-slate-800 mb-4">Attempt Timeline</h2>
+                        <div className="relative">
+                            {/* Connector line */}
+                            <div className="absolute left-5 top-6 bottom-6 w-0.5 bg-slate-200 print:hidden" />
+                            <div className="space-y-3">
+                                {student.timeline.map((t, idx) => {
+                                    const isPass = /pass/i.test(t.result);
+                                    const isClear = t.backlogCount === 0 && isPass;
+                                    const dotColor = isClear ? 'bg-emerald-500' : t.backlogCount > 0 ? 'bg-red-400' : 'bg-blue-400';
+                                    const cardBorder = isClear ? 'border-emerald-200' : t.backlogCount > 0 ? 'border-red-200' : 'border-slate-200';
+                                    return (
+                                        <div key={idx} className="flex items-start gap-4">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 z-10 ${dotColor}`}>
+                                                A{t.attemptNo}
+                                            </div>
+                                            <div className={`flex-1 bg-white rounded-xl border ${cardBorder} p-4 shadow-sm`}>
+                                                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                                    <div>
+                                                        <span className="font-semibold text-slate-800">{t.period}</span>
+                                                        {t.semLabel && <span className="text-slate-400 text-sm ml-2">Sem {t.semLabel}</span>}
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        {t.spi > 0 && <span className="text-xs text-slate-500">SPI: <strong>{t.spi}</strong></span>}
+                                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                                            isPass ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                                                        }`}>{t.result || 'Promoted'}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-wrap gap-3 text-sm">
+                                                    {t.backlogCount > 0 && (
+                                                        <div>
+                                                            <span className="text-red-600 font-medium">{t.backlogCount} backlog{t.backlogCount > 1 ? 's' : ''}</span>
+                                                            <div className="flex flex-wrap gap-1 mt-1">
+                                                                {t.backlogs.map(b => (
+                                                                    <span key={b.code} className="text-xs bg-red-50 border border-red-200 text-red-700 px-2 py-0.5 rounded-full">
+                                                                        {b.code} ({b.grade})
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {t.clearedCount > 0 && (
+                                                        <div>
+                                                            <span className="text-emerald-600 font-medium">{t.clearedCount} cleared</span>
+                                                            <div className="flex flex-wrap gap-1 mt-1">
+                                                                {t.cleared.map(c => (
+                                                                    <span key={c.code} className="text-xs bg-emerald-50 border border-emerald-200 text-emerald-700 px-2 py-0.5 rounded-full">
+                                                                        {c.code} ({c.grade})
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {t.backlogCount === 0 && t.clearedCount === 0 && (
+                                                        <span className="text-slate-400 text-xs">No backlogs this attempt</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
                 )}
 
