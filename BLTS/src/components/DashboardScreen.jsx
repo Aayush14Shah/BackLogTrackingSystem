@@ -32,6 +32,7 @@ import {
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { exportToExcel, exportToCSV } from '../utils/exportUtils';
+import { masterExport } from '../utils/masterExport';
 
 function cn(...inputs) {
   return twMerge(clsx(inputs));
@@ -421,6 +422,10 @@ export default function DashboardScreen({ students = [], onNavigate, fileName })
     await exportToExcel(students, 'all_students.xlsx');
   };
 
+  const handleMasterExport = async () => {
+    await masterExport(students, 'Master_Backlog_Report.xlsx');
+  };
+
   // Date for header
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
@@ -467,7 +472,7 @@ export default function DashboardScreen({ students = [], onNavigate, fileName })
             <div className="flex-1 h-px bg-slate-200" />
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
             <ActionButton
               icon={Search}
               label="Search Student"
@@ -495,6 +500,13 @@ export default function DashboardScreen({ students = [], onNavigate, fileName })
             />
             <ActionButton
               icon={Download}
+              label="Master Export"
+              sublabel="Full report · 4 sheets"
+              onClick={handleMasterExport}
+              variant="slate"
+            />
+            <ActionButton
+              icon={Download}
               label="Export Backlog"
               sublabel="Download as Excel"
               onClick={handleExportBacklog}
@@ -502,7 +514,7 @@ export default function DashboardScreen({ students = [], onNavigate, fileName })
             />
             <ActionButton
               icon={Download}
-              label="Export All Students"
+              label="Export All"
               sublabel="Full list as Excel"
               onClick={handleExportAll}
               variant="emerald"
@@ -512,7 +524,7 @@ export default function DashboardScreen({ students = [], onNavigate, fileName })
               label="Upload New File"
               sublabel="Load different data"
               onClick={() => onNavigate('upload')}
-              variant="slate"
+              variant="default"
             />
           </div>
         </div>
