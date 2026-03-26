@@ -344,7 +344,7 @@ export const parseFile = (file) => {
             reader.onload = e => {
                 try {
                     const wb = readWorkbook(e.target.result, 'string');
-                    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false });
+                    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: true });
                     resolve(isMergedFormat(rows) ? processMergedRows(rows) : processSingleFileRows(rows));
                 } catch (err) {
                     reject(new Error('Could not read CSV: ' + err.message));
@@ -361,7 +361,7 @@ export const parseFile = (file) => {
         reader.onload = e => {
             try {
                 const wb = readWorkbook(new Uint8Array(e.target.result), 'array');
-                const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false });
+                const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: true });
                 resolve(isMergedFormat(rows) ? processMergedRows(rows) : processSingleFileRows(rows));
             } catch (err) {
                 reject(new Error('Could not read Excel: ' + err.message));
