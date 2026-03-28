@@ -152,50 +152,42 @@ function AlertStrip({ alerts }) {
   );
 }
 
-// ─── Backlog Trends Chart ─────────────────────────────────────────────────────
-function BacklogTrendsChart({ data }) {
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-white border border-slate-200 rounded-lg shadow-lg px-4 py-3 text-sm">
-          <p className="font-semibold text-slate-700 mb-1">{label}</p>
-          <p className="text-red-600 font-bold">{payload[0].value} backlog subjects</p>
-        </div>
-      );
-    }
-    return null;
-  };
-
+// ─── Attempt Funnel Table ─────────────────────────────────────────────────────
+function AttemptFunnelTable({ data }) {
+  if (!data.length) return null;
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-      <div className="flex items-center gap-2 mb-5">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-100">
         <div className="p-1.5 rounded-lg bg-blue-50">
           <BarChart2 className="w-4 h-4 text-blue-600" />
         </div>
-        <h3 className="text-base font-semibold text-slate-800">Backlog Subjects by Semester</h3>
+        <h3 className="text-base font-semibold text-slate-800">Exam Cycle Funnel</h3>
       </div>
-      {data.length === 0 ? (
-        <div className="h-[280px] flex items-center justify-center text-slate-400 text-sm">No data available</div>
-      ) : (
-        <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={data} barSize={32}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-            <XAxis
-              dataKey="semester"
-              tick={{ fill: '#64748b', fontSize: 12 }}
-              axisLine={{ stroke: '#e2e8f0' }}
-              tickLine={false}
-            />
-            <YAxis
-              tick={{ fill: '#64748b', fontSize: 12 }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc' }} />
-            <Bar dataKey="backlogs" fill="#ef4444" radius={[5, 5, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      )}
+      <div className="divide-y divide-slate-50">
+        {data.map((row, i) => {
+          const passRate = row.appeared > 0 ? Math.round((row.passed / row.appeared) * 100) : 0;
+          return (
+            <div key={i} className="px-5 py-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{row.label || row.period}</p>
+                  <p className="text-xs text-slate-400">{row.period}</p>
+                </div>
+                <div className="flex items-center gap-3 text-xs font-semibold">
+                  <span className="text-slate-600">{row.appeared} appeared</span>
+                  <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{row.passed} passed</span>
+                  <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">{row.promoted} promoted</span>
+                </div>
+              </div>
+              <div className="flex h-2 rounded-full overflow-hidden bg-slate-100">
+                <div className="bg-emerald-500 transition-all" style={{ width: `${passRate}%` }} />
+                <div className="bg-blue-400 transition-all" style={{ width: `${100 - passRate}%` }} />
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">{passRate}% pass rate</p>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -353,16 +345,20 @@ export default function DashboardScreen({ students = [], onNavigate, fileName })
   }, [students]);
 
   const backlogTrendsData = useMemo(() => {
-    const semesterCounts = {};
+    // Build per-attempt stats: appeared, passed, promoted
+    const attemptStats = {};
     students.forEach(student => {
-      student.semesters?.forEach(sem => {
-        const key = `Sem ${sem.semLabel || sem.semNo}`;
-        semesterCounts[key] = (semesterCounts[key] || 0) + (sem.subjects?.filter(s => s.isBacklog).length || 0);
+      (student.attempts || student.semesters || []).forEach(att => {
+        const key = att.period || att.attemptLabel || `Attempt ${att.attemptNo}`;
+        if (!attemptStats[key]) {
+          attemptStats[key] = { label: att.label || key, period: key, appeared: 0, passed: 0, promoted: 0, attemptNo: att.attemptNo || 0 };
+        }
+        attemptStats[key].appeared++;
+        if (/^pass/i.test(att.result)) attemptStats[key].passed++;
+        else attemptStats[key].promoted++;
       });
     });
-    return Object.entries(semesterCounts)
-      .map(([semester, backlogs]) => ({ semester, backlogs }))
-      .sort((a, b) => parseInt(a.semester.replace('Sem ', '')) - parseInt(b.semester.replace('Sem ', '')));
+    return Object.values(attemptStats).sort((a, b) => a.attemptNo - b.attemptNo);
   }, [students]);
 
   const departmentData = useMemo(() => {
@@ -591,7 +587,7 @@ export default function DashboardScreen({ students = [], onNavigate, fileName })
           </div>
           {/* Charts span 2 cols */}
           <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-5">
-            <BacklogTrendsChart data={backlogTrendsData} />
+            <AttemptFunnelTable data={backlogTrendsData} />
             <DepartmentPerformance data={departmentData} />
           </div>
         </div>
