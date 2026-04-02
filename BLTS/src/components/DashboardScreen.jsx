@@ -29,14 +29,9 @@ import {
   Cell,
   Legend
 } from 'recharts';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { cn } from '../utils/cn';
 import { exportToExcel, exportToCSV } from '../utils/exportUtils';
 import { masterExport } from '../utils/masterExport';
-
-function cn(...inputs) {
-  return twMerge(clsx(inputs));
-}
 
 // ─── Quick Action Button ──────────────────────────────────────────────────────
 function ActionButton({ icon: Icon, label, sublabel, onClick, variant = 'default', badge, badgeColor = 'red' }) {

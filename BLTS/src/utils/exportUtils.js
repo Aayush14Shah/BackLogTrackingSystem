@@ -589,3 +589,393 @@ export const exportStudentReport = async (student, format = 'print') => {
       console.warn('Unsupported export format:', format);
   }
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Provisional Marksheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Generates a professional A4-ready HTML marksheet for a single semester.
+ * @param {object} student  – full student data object
+ * @param {object} sem      – one semester object from student.semesters
+ */
+export const generateProvisionalMarksheetHTML = (student, sem) => {
+  const today = new Date().toLocaleDateString('en-IN', {
+    day: '2-digit', month: 'long', year: 'numeric',
+  });
+
+  const semLabel  = sem.semLabel || sem.semNo || '—';
+  const period    = sem.period   || '—';
+  const spi       = sem.spi      || '—';
+  const result    = sem.result   || '—';
+  const earnedCr  = sem.earnedCredits != null ? sem.earnedCredits : '—';
+  const totalCr   = sem.totalCredits  != null ? sem.totalCredits  : '—';
+  const gradePoints = sem.gradePoints != null ? sem.gradePoints : '—';
+
+  const FAIL_GRADES = new Set(['F', 'FF', 'I', 'W', 'AB']);
+  const isResultFail = /fail|detained/i.test(result);
+  const isResultPass = /pass/i.test(result);
+
+  const subjectRows = (sem.subjects || []).map((sub, idx) => {
+    const isFail = sub.isBacklog;
+    const rowBg  = isFail ? '#fff5f5' : (idx % 2 === 0 ? '#ffffff' : '#f8fafc');
+
+    const gradeStyle = (g) => {
+      const u = (g || '').trim().toUpperCase();
+      if (!u || u === '-' || u === '—') return 'color:#94a3b8;';
+      return FAIL_GRADES.has(u) ? 'color:#dc2626;font-weight:700;' : 'color:#065f46;font-weight:700;';
+    };
+
+    const cell = (val) => val !== null && val !== undefined && val !== '' ? val : '—';
+
+    return `
+      <tr style="background:${rowBg};">
+        <td style="padding:7px 10px;border:1px solid #e2e8f0;font-family:monospace;font-size:11px;color:#64748b;">${cell(sub.code)}</td>
+        <td style="padding:7px 10px;border:1px solid #e2e8f0;font-size:12px;font-weight:${isFail ? '600' : '400'};color:${isFail ? '#991b1b' : '#1e293b'};">
+          ${cell(sub.name)}
+          ${isFail ? '<span style="margin-left:6px;font-size:9px;background:#fecaca;color:#991b1b;padding:1px 5px;border-radius:3px;font-weight:700;vertical-align:middle;">NOT CLEARED</span>' : ''}
+        </td>
+        <td style="padding:7px 10px;border:1px solid #e2e8f0;text-align:center;font-size:12px;">${cell(sub.credits)}</td>
+        <td style="padding:7px 10px;border:1px solid #e2e8f0;text-align:center;font-size:12px;">${cell(sub.midMarks)}</td>
+        <td style="padding:7px 10px;border:1px solid #e2e8f0;text-align:center;font-size:12px;">${cell(sub.theoryMarks)}</td>
+        <td style="padding:7px 10px;border:1px solid #e2e8f0;text-align:center;font-size:12px;">${cell(sub.vivaMarks)}</td>
+        <td style="padding:7px 10px;border:1px solid #e2e8f0;text-align:center;font-size:13px;font-weight:600;">${cell(sub.totalMarks)}</td>
+        <td style="padding:7px 10px;border:1px solid #e2e8f0;text-align:center;font-size:12px;${gradeStyle(sub.subGrade)}">${cell(sub.subGrade)}</td>
+        <td style="padding:7px 10px;border:1px solid #e2e8f0;text-align:center;font-size:12px;color:#1e40af;">${sub.gradePoint != null ? sub.gradePoint : '—'}</td>
+        <td style="padding:7px 10px;border:1px solid #e2e8f0;text-align:center;font-size:11px;color:#64748b;">${cell(sub.comment)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const resultColor = isResultFail ? '#dc2626' : isResultPass ? '#065f46' : '#1e40af';
+  const resultBg    = isResultFail ? '#fef2f2' : isResultPass ? '#d1fae5' : '#dbeafe';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Provisional Marksheet — ${student.name} — Sem ${semLabel}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+    }
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      background: #fff;
+      padding: 0;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.12);
+    }
+
+    /* ── Header ── */
+    .header {
+      background: linear-gradient(135deg, #1e3a5f 0%, #2c5282 100%);
+      color: #fff;
+      padding: 28px 36px 20px;
+      text-align: center;
+      position: relative;
+    }
+    .header-badge {
+      position: absolute;
+      top: 16px; left: 24px;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #bfdbfe;
+    }
+    .header h1 {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+    .header h2 {
+      font-size: 13px;
+      font-weight: 400;
+      color: #bfdbfe;
+      margin-bottom: 14px;
+    }
+    .header-divider {
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.2);
+      margin: 12px 0;
+    }
+    .header .doc-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #e0f2fe;
+    }
+    .header .provisional-note {
+      font-size: 10px;
+      color: #93c5fd;
+      margin-top: 3px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Student Info ── */
+    .student-info {
+      padding: 18px 36px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 32px;
+      background: #f8fafc;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .info-item { display: flex; gap: 8px; align-items: baseline; }
+    .info-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #64748b; white-space: nowrap; }
+    .info-value { font-size: 13px; font-weight: 600; color: #0f172a; }
+    .info-value.mono { font-family: monospace; background: #e2e8f0; padding: 1px 7px; border-radius: 4px; font-size: 12px; }
+
+    /* ── Section Title ── */
+    .sec-title {
+      background: #334155;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      padding: 6px 36px;
+    }
+
+    /* ── Marks Table ── */
+    .marks-wrap { padding: 0 36px 16px; overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 0;
+    }
+    thead tr {
+      background: #1e3a5f;
+      color: #fff;
+    }
+    thead th {
+      padding: 9px 10px;
+      border: 1px solid #2c5282;
+      text-align: center;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    thead th:nth-child(2) { text-align: left; }
+    tfoot tr { background: #f1f5f9; }
+    tfoot td { padding: 8px 10px; border: 1px solid #e2e8f0; font-size: 11px; color: #475569; text-align: center; }
+
+    /* ── Summary Strip ── */
+    .summary {
+      margin: 0 36px 20px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .summary-cell {
+      padding: 12px 14px;
+      text-align: center;
+      border-right: 1px solid #e2e8f0;
+    }
+    .summary-cell:last-child { border-right: none; }
+    .summary-cell .s-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #94a3b8; margin-bottom: 4px; }
+    .summary-cell .s-value { font-size: 20px; font-weight: 800; color: #1e293b; }
+
+    /* ── Result Banner ── */
+    .result-banner {
+      margin: 0 36px 24px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: ${resultBg};
+      border: 1.5px solid ${isResultFail ? '#fca5a5' : isResultPass ? '#6ee7b7' : '#93c5fd'};
+    }
+    .result-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 1px; }
+    .result-value { font-size: 18px; font-weight: 800; color: ${resultColor}; letter-spacing: 1px; }
+
+    /* ── Footer ── */
+    .footer {
+      margin: 0 36px;
+      padding-top: 16px;
+      border-top: 1px dashed #cbd5e1;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 24px;
+    }
+    .sig-box { text-align: center; }
+    .sig-line { border-top: 1px solid #94a3b8; margin: 34px 8px 4px; }
+    .sig-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #475569; }
+    .sig-sub { font-size: 9px; color: #94a3b8; }
+
+    .watermark-note {
+      text-align: center;
+      margin: 16px 36px 20px;
+      font-size: 9px;
+      color: #94a3b8;
+      letter-spacing: 0.5px;
+    }
+
+    @page { size: A4 portrait; margin: 0; }
+    @media print {
+      body { background: #fff; }
+      .page { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-badge">Provisional</div>
+    <h1>Student Academic Report</h1>
+    <h2>${student.branch || 'Academic Institution'}</h2>
+    <hr class="header-divider" />
+    <div class="doc-title">Semester Marksheet</div>
+    <div class="provisional-note">This is a provisional document generated by the Backlog Tracking System. It is not an official university document.</div>
+  </div>
+
+  <!-- Student Info Grid -->
+  <div class="student-info">
+    <div class="info-item">
+      <span class="info-label">Student Name</span>
+      <span class="info-value">${student.name || '—'}</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Enrollment No.</span>
+      <span class="info-value mono">${student.enrollmentNo || '—'}</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Semester</span>
+      <span class="info-value">Semester ${semLabel}</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Exam Period</span>
+      <span class="info-value">${period}</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Branch / Programme</span>
+      <span class="info-value">${student.branch || '—'}</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Date of Issue</span>
+      <span class="info-value">${today}</span>
+    </div>
+  </div>
+
+  <!-- Marks Table -->
+  <div class="sec-title">Subject-wise Performance</div>
+  <div class="marks-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:90px;">Code</th>
+          <th style="text-align:left;min-width:160px;">Subject Name</th>
+          <th>Cr.</th>
+          <th>Internal<br/><span style="font-weight:400;">/50</span></th>
+          <th>External<br/><span style="font-weight:400;">/50</span></th>
+          <th>Viva<br/><span style="font-weight:400;">/50</span></th>
+          <th>Total</th>
+          <th>Grade</th>
+          <th>GP</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${subjectRows || '<tr><td colspan="10" style="text-align:center;padding:16px;color:#94a3b8;">No subjects found for this semester.</td></tr>'}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Summary Strip -->
+  <div class="sec-title" style="margin-bottom:10px;">Semester Summary</div>
+  <div class="summary">
+    <div class="summary-cell">
+      <div class="s-label">SPI</div>
+      <div class="s-value" style="color:#1e40af;">${spi}</div>
+    </div>
+    <div class="summary-cell">
+      <div class="s-label">Grade Points</div>
+      <div class="s-value">${gradePoints}</div>
+    </div>
+    <div class="summary-cell">
+      <div class="s-label">Credits Earned</div>
+      <div class="s-value">${earnedCr}<span style="font-size:13px;font-weight:400;color:#94a3b8;">/${totalCr}</span></div>
+    </div>
+    <div class="summary-cell">
+      <div class="s-label">Subjects</div>
+      <div class="s-value">${(sem.subjects || []).length}</div>
+    </div>
+  </div>
+
+  <!-- Result Banner -->
+  <div class="result-banner">
+    <div>
+      <div class="result-label">Semester Result</div>
+      <div class="result-value">${result}</div>
+    </div>
+  </div>
+
+  <!-- Signature Footer -->
+  <div class="footer">
+    <div class="sig-box">
+      <div class="sig-line"></div>
+      <div class="sig-label">Student Signature</div>
+    </div>
+    <div class="sig-box">
+      <div class="sig-line"></div>
+      <div class="sig-label">Examination Controller</div>
+      <div class="sig-sub">With Seal</div>
+    </div>
+    <div class="sig-box">
+      <div class="sig-line"></div>
+      <div class="sig-label">Principal / Director</div>
+      <div class="sig-sub">With Seal</div>
+    </div>
+  </div>
+
+  <p class="watermark-note">
+    PROVISIONAL — Generated by BLTS on ${today}. This document is subject to verification by the university registrar.
+  </p>
+
+</div>
+
+<script>
+  window.onload = function() { window.print(); };
+</script>
+</body>
+</html>`;
+};
+
+/**
+ * Opens a new browser window with the provisional marksheet HTML and triggers print.
+ * @param {object} student  – full student data object
+ * @param {object} sem      – the semester to generate the marksheet for
+ */
+export const downloadProvisionalMarksheet = (student, sem) => {
+  if (!student || !sem) {
+    console.warn('downloadProvisionalMarksheet: student and sem are required');
+    return;
+  }
+  const html = generateProvisionalMarksheetHTML(student, sem);
+  const win  = window.open('', '_blank');
+  if (!win) {
+    alert('Popup was blocked. Please allow popups for this site and try again.');
+    return;
+  }
+  win.document.write(html);
+  win.document.close();
+};

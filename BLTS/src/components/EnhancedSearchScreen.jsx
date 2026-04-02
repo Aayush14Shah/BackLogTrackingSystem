@@ -10,14 +10,9 @@ import {
   Printer,
   Download
 } from 'lucide-react';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { cn } from '../utils/cn';
 import StatusBadge from './ui/StatusBadge';
 import { exportToExcel } from '../utils/exportUtils';
-
-function cn(...inputs) {
-  return twMerge(clsx(inputs));
-}
 
 // ─── Backlog category helpers ─────────────────────────────────────────────────
 const BACKLOG_CATEGORIES = [
