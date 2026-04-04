@@ -1,7 +1,5 @@
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-export const cn = (...inputs) => twMerge(clsx(inputs));
+// Re-export cn from centralized utility
+export { cn } from '../../utils/cn';
 
 export const FAIL_GRADES = new Set(['F', 'FF', 'I', 'W', 'AB']);
 export const isFail = (g) => FAIL_GRADES.has((g || '').trim().toUpperCase());

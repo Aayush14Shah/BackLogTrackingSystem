@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, CheckCircle2, XCircle, MapPin, Calendar } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle2, XCircle, MapPin, Calendar, FileDown } from 'lucide-react';
 import { cn, ResultChip, GradeBox, isFail } from './shared';
 import SubjectGrid from './SubjectGrid';
+import { downloadProvisionalMarksheet } from '../../utils/exportUtils';
 
 const ATTEMPT_COLORS = {
   PASS:     { line: 'bg-[#1a6b3c]', dot: 'bg-[#1a6b3c]', card: 'border-l-[#1a6b3c]' },
@@ -18,7 +19,7 @@ function getColors(result) {
   return ATTEMPT_COLORS.DEFAULT;
 }
 
-export default function AttemptCard({ attempt, isLast, subjectHistory, defaultOpen = false }) {
+export default function AttemptCard({ attempt, student, isLast, subjectHistory, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
   const colors = getColors(attempt.result);
   const failCount = attempt.subjects.filter(s => s.isBacklog).length;
@@ -31,7 +32,7 @@ export default function AttemptCard({ attempt, isLast, subjectHistory, defaultOp
     <div className="flex gap-4">
       {/* Timeline spine */}
       <div className="flex flex-col items-center flex-shrink-0 w-10">
-        <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold z-10 ring-4 ring-[#f5f1eb]', colors.dot)}>
+        <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold z-10 ring-4 ring-slate-50', colors.dot)}>
           {attempt.attemptNo}
         </div>
         {!isLast && <div className={cn('w-0.5 flex-1 mt-1', colors.line, 'opacity-30')} style={{ minHeight: 24 }} />}
@@ -51,7 +52,7 @@ export default function AttemptCard({ attempt, isLast, subjectHistory, defaultOp
           <div className="flex flex-wrap items-start justify-between gap-3">
             {/* Left */}
             <div>
-              <p className="font-display text-base font-semibold text-slate-800 mb-0.5">
+              <p className="text-base font-bold text-slate-800 mb-0.5 uppercase tracking-wide">
                 {attempt.label}
               </p>
               <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
@@ -86,6 +87,18 @@ export default function AttemptCard({ attempt, isLast, subjectHistory, defaultOp
                 </div>
               )}
               <ResultChip result={attempt.result} />
+              {/* Provisional Marksheet button */}
+              {student && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); downloadProvisionalMarksheet(student, attempt); }}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-semibold transition-colors shadow-sm"
+                  title="Download Provisional Marksheet for this attempt"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  Marksheet
+                </button>
+              )}
               <div className="text-slate-400">
                 {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </div>

@@ -12,7 +12,7 @@ export default function BacklogTracker({ subjectHistory = [], attempts = [] }) {
 
   return (
     <div className="mt-8">
-      <h2 className="font-display text-xl font-bold text-slate-800 mb-1">
+      <h2 className="text-xl font-bold text-slate-800 mb-1">
         Subject-wise Backlog Tracker
       </h2>
       <p className="text-sm text-slate-500 mb-4">

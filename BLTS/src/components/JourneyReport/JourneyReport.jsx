@@ -33,7 +33,7 @@ export default function JourneyReport({ student, onBack, onBackToDashboard }) {
     : firstAttempt?.period || '—';
 
   return (
-    <div className="min-h-screen bg-[#f5f1eb] pb-20 print:bg-white print:pb-0">
+    <div className="min-h-screen bg-slate-50 pb-20 print:bg-white print:pb-0">
 
       {/* ── Top nav ─────────────────────────────────────────────────────────── */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-20 print:hidden">
@@ -68,7 +68,7 @@ export default function JourneyReport({ student, onBack, onBackToDashboard }) {
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
             <div className="flex-1">
               {/* Name */}
-              <h1 className="font-display text-3xl font-bold text-slate-900 mb-3 leading-tight">
+              <h1 className="text-3xl font-bold text-slate-900 mb-3 leading-tight text-xl uppercase tracking-wider">
                 {student.name}
               </h1>
 
@@ -157,7 +157,7 @@ export default function JourneyReport({ student, onBack, onBackToDashboard }) {
 
         {/* ── Attempt Timeline ─────────────────────────────────────────────── */}
         <div className="mb-2">
-          <h2 className="font-display text-xl font-bold text-slate-800 mb-1">Academic Journey</h2>
+          <h2 className="text-xl font-bold text-slate-800 mb-1">Academic Journey</h2>
           <p className="text-sm text-slate-500 mb-5">
             {student.attempts?.length} exam attempt{student.attempts?.length !== 1 ? 's' : ''} on record
           </p>
@@ -167,6 +167,7 @@ export default function JourneyReport({ student, onBack, onBackToDashboard }) {
               <AttemptCard
                 key={attempt.attemptNo}
                 attempt={attempt}
+                student={student}
                 isLast={idx === student.attempts.length - 1}
                 subjectHistory={student.subjectHistory}
                 defaultOpen={idx === student.attempts.length - 1}
