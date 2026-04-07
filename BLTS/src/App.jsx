@@ -4,7 +4,39 @@ import UploadScreen from './components/UploadScreen';
 import EnhancedSearchScreen from './components/EnhancedSearchScreen';
 import DashboardScreen from './components/DashboardScreen';
 import JourneyReport from './components/JourneyReport/JourneyReport';
+import TranscriptScreen from './components/TranscriptScreen';
 import { buildStudents } from './services/studentBuilder';
+import React from 'react';
+
+// ─── Error Boundary ───────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-8 max-w-md w-full text-center">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-red-600 text-xl font-bold">!</span>
+            </div>
+            <h2 className="text-lg font-bold text-slate-800 mb-2">Something went wrong</h2>
+            <p className="text-sm text-slate-500 mb-4 font-mono bg-slate-50 rounded p-2 text-left break-all">
+              {this.state.error?.message || 'Unknown error'}
+            </p>
+            <button
+              onClick={() => { this.setState({ error: null }); window.location.hash = '#/upload'; }}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2 rounded-lg transition-colors"
+            >
+              Go back to Upload
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ─── Session storage helpers ──────────────────────────────────────────────────
 const STORAGE_KEY = 'blts_session';
@@ -73,13 +105,13 @@ function App() {
     }
   }, []);
 
-  const handleFileLoaded = useCallback(async (files) => {
+  const handleFileLoaded = useCallback(async (files, mode = 'backlog') => {
     const parsedData = await buildStudents(Array.isArray(files) ? files : [files]);
     setStudentsData(parsedData);
     const name = Array.isArray(files) ? `${files.length} files loaded` : files.name;
     setFileName(name);
     saveSession(parsedData, name);
-    navigate('/dashboard');
+    navigate(mode === 'transcript' ? '/transcript' : '/dashboard');
   }, [navigate]);
 
   const handleStudentSelect = useCallback((student) => {
@@ -109,6 +141,7 @@ function App() {
       case 'dashboard':  navigate('/dashboard'); break;
       case 'students':
       case 'departments': navigate('/search'); break;
+      case 'transcript':  navigate('/transcript'); break;
       case 'report':
         if (filters.student) {
           navigate(`/report/${encodeURIComponent(filters.student.enrollmentNo)}`);
@@ -121,57 +154,68 @@ function App() {
   const hasData = studentsData.length > 0;
 
   return (
-    <Routes>
-      <Route path="/upload" element={<UploadScreen onFileLoaded={handleFileLoaded} />} />
+    <ErrorBoundary>
+      <Routes>
+        <Route path="/upload" element={<UploadScreen onFileLoaded={handleFileLoaded} />} />
 
-      <Route
-        path="/dashboard"
-        element={
-          hasData
-            ? <DashboardScreen students={studentsData} onNavigate={handleNavigate} fileName={fileName} />
-            : <Navigate to="/upload" replace />
-        }
-      />
+        <Route
+          path="/dashboard"
+          element={
+            hasData
+              ? <DashboardScreen students={studentsData} onNavigate={handleNavigate} fileName={fileName} />
+              : <Navigate to="/upload" replace />
+          }
+        />
 
-      <Route
-        path="/search"
-        element={
-          hasData
-            ? (
-              <EnhancedSearchScreen
-                students={studentsData}
-                onStudentSelect={handleStudentSelect}
-                onResetFile={handleResetFile}
-                fileName={fileName}
-                initialFilters={searchFilters}
-                onBackToDashboard={handleBackToDashboard}
-              />
-            )
-            : <Navigate to="/upload" replace />
-        }
-      />
+        <Route
+          path="/search"
+          element={
+            hasData
+              ? (
+                <EnhancedSearchScreen
+                  students={studentsData}
+                  onStudentSelect={handleStudentSelect}
+                  onResetFile={handleResetFile}
+                  fileName={fileName}
+                  initialFilters={searchFilters}
+                  onBackToDashboard={handleBackToDashboard}
+                />
+              )
+              : <Navigate to="/upload" replace />
+          }
+        />
 
-      <Route
-        path="/report/:studentId"
-        element={
-          hasData
-            ? (
-              <ReportRoute
-                students={studentsData}
-                onBack={handleBackToSearch}
-                onBackToDashboard={handleBackToDashboard}
-              />
-            )
-            : <Navigate to="/upload" replace />
-        }
-      />
+        <Route
+          path="/report/:studentId"
+          element={
+            hasData
+              ? (
+                <ReportRoute
+                  students={studentsData}
+                  onBack={handleBackToSearch}
+                  onBackToDashboard={handleBackToDashboard}
+                />
+              )
+              : <Navigate to="/upload" replace />
+          }
+        />
 
-      {/* Legacy /report without param → redirect to search */}
-      <Route path="/report" element={<Navigate to={hasData ? '/search' : '/upload'} replace />} />
+        {/* Legacy /report without param → redirect to search */}
+        <Route path="/report" element={<Navigate to={hasData ? '/search' : '/upload'} replace />} />
 
-      {/* Default: redirect to dashboard if data exists, otherwise upload */}
-      <Route path="*" element={<Navigate to={hasData ? '/dashboard' : '/upload'} replace />} />
-    </Routes>
+        <Route
+          path="/transcript"
+          element={
+            hasData
+              ? <TranscriptScreen students={studentsData} onBack={handleBackToDashboard} />
+              : <Navigate to="/upload" replace />
+          }
+        />
+
+        {/* Default: redirect to dashboard if data exists, otherwise upload */}
+        <Route path="*" element={<Navigate to={hasData ? '/dashboard' : '/upload'} replace />} />
+      </Routes>
+    </ErrorBoundary>
   );
 }
 

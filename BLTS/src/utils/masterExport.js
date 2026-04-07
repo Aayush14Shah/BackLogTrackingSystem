@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { FAIL_GRADES } from '../config';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 const C = {
@@ -45,7 +46,7 @@ function resultColors(result) {
   return { bg: C.white, fg: '374151' };
 }
 
-const FAIL_SET = new Set(['F','FF','I','W','AB']);
+const FAIL_SET = new Set(FAIL_GRADES);
 function gradeColors(g) {
   const u = (g || '').trim().toUpperCase();
   if (!u || u === '-' || u === '—') return null;
@@ -542,6 +543,283 @@ function buildProgressionSheet(wb, students) {
     });
 }
 
+// ─── Sheet: Component-wise Failure Breakdown ─────────────────────────────────
+// Grouped by student. Each student gets one block:
+//   Row 1 of block: Name | Enrollment | Subject1 | marks | grades | failedIn | status | A1..An
+//   Row 2 of block:  ""  |     ""     | Subject2 | ...
+// Name + Enrollment cells are merged vertically across all subject rows for that student.
+function buildComponentFailureSheet(wb, students) {
+  const maxAttempts = Math.max(...students.map(s => s.attempts?.length || 1), 1);
+
+  // ── Build per-student subject groups ──────────────────────────────────────
+  // studentGroups: [{ name, enrollmentNo, branch, subjects: [subjectRow, ...] }]
+  const studentGroups = [];
+
+  students.forEach(student => {
+    // ── Only include students who are STILL failing (match "Still Failing" sheet) ──
+    if (student.totalActiveBacklogs === 0) return;
+
+    const backlogSubMap = new Map(); // subCode → { subName, attemptData: Map<attemptNo, sub> }
+
+    (student.attempts || []).forEach(attempt => {
+      (attempt.subjects || []).forEach(sub => {
+        if (!sub.isBacklog) return;
+        if (!backlogSubMap.has(sub.code)) {
+          backlogSubMap.set(sub.code, { subName: sub.name || sub.code, attemptData: new Map() });
+        }
+        backlogSubMap.get(sub.code).attemptData.set(attempt.attemptNo, {
+          ...sub, period: attempt.period, result: attempt.result,
+        });
+      });
+    });
+
+    if (!backlogSubMap.size) return;
+
+    // The student's actual last attemptNo (not array length — they may have gaps)
+    const actualLastAttemptNo = Math.max(...(student.attempts || []).map(a => a.attemptNo));
+
+    const subjectRows = [];
+    backlogSubMap.forEach(({ subName, attemptData }, subCode) => {
+      const lastAttemptNo = Math.max(...attemptData.keys());
+      const lastSub       = attemptData.get(lastAttemptNo);
+
+      const extFail  = FAIL_SET.has((lastSub.theoryGrade || '').trim().toUpperCase());
+      const intFail  = FAIL_SET.has((lastSub.midGrade    || '').trim().toUpperCase());
+      const vivaFail = FAIL_SET.has((lastSub.vivaGrade   || '').trim().toUpperCase());
+
+      let failedIn = (lastSub.comment || '').trim();
+      if (!failedIn || /^success$/i.test(failedIn) || failedIn === '0') {
+        const parts = [];
+        if (extFail)  parts.push('External');
+        if (intFail)  parts.push('Internal');
+        if (vivaFail) parts.push('Pra/Viva');
+        failedIn = parts.join(' + ') || 'Unknown';
+      }
+
+      // A subject is still failing only if it was a backlog in the student's actual last attempt
+      const lastAppearance = attemptData.get(actualLastAttemptNo);
+      const stillFailing   = lastAppearance?.isBacklog === true;
+
+      const attemptGrades = [];
+      for (let a = 1; a <= maxAttempts; a++) {
+        const d = attemptData.get(a);
+        attemptGrades.push(d ? (d.subGrade || d.emGrade || '—') : '—');
+      }
+
+      subjectRows.push({
+        subCode,
+        subName,
+        extMarks:  lastSub.theoryMarks || '—',
+        intMarks:  lastSub.midMarks    || '—',
+        vivaMarks: lastSub.vivaMarks   || '—',
+        totalMarks:lastSub.totalMarks  || '—',
+        extGrade:  lastSub.theoryGrade || '—',
+        intGrade:  lastSub.midGrade    || '—',
+        vivaGrade: lastSub.vivaGrade   || '—',
+        subGrade:  lastSub.subGrade    || lastSub.emGrade || '—',
+        failedIn,
+        extFail, intFail, vivaFail,
+        stillFailing,
+        attemptGrades,
+      });
+    });
+
+    // Only keep subjects that are still failing in the last attempt
+    const stillFailingSubjects = subjectRows.filter(s => s.stillFailing);
+    if (!stillFailingSubjects.length) return;
+
+    studentGroups.push({
+      name:         student.name,
+      enrollmentNo: student.enrollmentNo || '',
+      subjects:     stillFailingSubjects,
+    });
+  });
+
+  if (!studentGroups.length) return;
+
+  // Sort students by name (all have uncleared subjects by definition now)
+  studentGroups.sort((a, b) => a.name.localeCompare(b.name));
+
+  // ── Worksheet setup ────────────────────────────────────────────────────────
+  const ws = wb.addWorksheet('🔍 Component Failures');
+
+  // Cols: #, Name, Enrollment, SubCode, SubName,
+  //       Ext(/70), Int(/30), Viva(/50), Total(/150),
+  //       TGrade, MGrade, VGrade, SubGrade, FailedIn, Status,
+  //       A1…An
+  const fixedCols = 15;
+  const totalCols = fixedCols + maxAttempts;
+
+  ws.columns = [
+    { width: 5  },
+    { width: 30 },
+    { width: 20 },
+    { width: 14 },
+    { width: 36 },
+    { width: 10 },
+    { width: 10 },
+    { width: 10 },
+    { width: 10 },
+    { width: 11 },
+    { width: 11 },
+    { width: 11 },
+    { width: 11 },
+    { width: 26 },
+    { width: 14 },
+    ...Array(maxAttempts).fill({ width: 11 }),
+  ];
+
+  // ── Title ──
+  const titleRow = ws.addRow(['COMPONENT-WISE FAILURE BREAKDOWN']);
+  ws.mergeCells(1, 1, 1, totalCols);
+  titleRow.height = 30;
+  Object.assign(titleRow.getCell(1), {
+    value:     'COMPONENT-WISE FAILURE BREAKDOWN — Students Still Failing After All Attempts',
+    font:      fnt({ bold: true, size: 13, color: { argb: C.white } }),
+    fill:      fill('FFDC2626'),
+    alignment: align('center'),
+    border:    BORDER,
+  });
+
+  // ── Subtitle ──
+  const totalSubjectFailures = studentGroups.reduce((n, g) => n + g.subjects.length, 0);
+  const subRow = ws.addRow([
+    `${studentGroups.length} students still failing  ·  ${totalSubjectFailures} uncleared subjects  ·  Generated: ${new Date().toLocaleString('en-IN')}`
+  ]);
+  ws.mergeCells(2, 1, 2, totalCols);
+  subRow.height = 18;
+  Object.assign(subRow.getCell(1), {
+    font:      fnt({ italic: true, color: { argb: 'FF6B7280' } }),
+    alignment: align('left'),
+    fill:      fill('FFFEF2F2'),
+    border:    BORDER,
+  });
+
+  // ── Header ──
+  const hdrRow = ws.addRow([
+    '#', 'Student Name', 'Enrollment No', 'Sub Code', 'Subject Name',
+    'Ext\n(/70)', 'Int\n(/30)', 'Viva\n(/50)', 'Total\n(/150)',
+    'TGrade\n(External)', 'MGrade\n(Internal)', 'VGrade\n(Viva)', 'Sub\nGrade',
+    'Failed In\n(Component)', 'Status',
+    ...Array.from({ length: maxAttempts }, (_, i) => `A${i + 1}\nGrade`),
+  ]);
+  hdrRow.height = 36;
+  hdrRow.eachCell((cell, col) => {
+    cell.font      = fnt({ bold: true, color: { argb: C.white }, size: 9 });
+    cell.fill      = fill(col > fixedCols ? C.secBg : C.navyMid);
+    cell.alignment = align(col <= 3 || col === 5 || col === 14 ? 'left' : 'center', true);
+    cell.border    = BORDER_THICK_BOTTOM;
+  });
+
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 3 }];
+
+  // ── Data rows — grouped by student ────────────────────────────────────────
+  let studentSeq = 0;
+
+  studentGroups.forEach(group => {
+    studentSeq++;
+    const subjectCount = group.subjects.length;
+    const hasAnyUncleared = group.subjects.some(s => s.stillFailing);
+
+    // Light background for the whole student block
+    const studentBg = hasAnyUncleared ? 'FFFFF5F5' : 'FFF8FAFC';
+
+    // Track which Excel row the first subject of this student lands on
+    const firstDataRowNum = ws.rowCount + 1; // next row to be added
+
+    group.subjects.forEach((sub, si) => {
+      const isFirstSubject = si === 0;
+
+      const dataRow = ws.addRow([
+        isFirstSubject ? studentSeq : '',   // # — only on first row
+        isFirstSubject ? group.name : '',   // Name — only on first row
+        isFirstSubject ? group.enrollmentNo : '', // Enrollment — only on first row
+        sub.subCode,
+        sub.subName,
+        sub.extMarks,
+        sub.intMarks,
+        sub.vivaMarks,
+        sub.totalMarks,
+        sub.extGrade,
+        sub.intGrade,
+        sub.vivaGrade,
+        sub.subGrade,
+        sub.failedIn,
+        sub.stillFailing ? 'Uncleared' : 'Cleared',
+        ...sub.attemptGrades,
+      ]);
+      dataRow.height = 18;
+
+      dataRow.eachCell({ includeEmpty: true }, (cell, col) => {
+        cell.fill      = fill(studentBg);
+        cell.border    = BORDER;
+        cell.alignment = align(col <= 3 || col === 5 || col === 14 ? 'left' : 'center');
+        cell.font      = fnt({});
+      });
+
+      // Component grade cells
+      [
+        { col: 10, failed: sub.extFail  },
+        { col: 11, failed: sub.intFail  },
+        { col: 12, failed: sub.vivaFail },
+      ].forEach(({ col, failed }) => {
+        const cell = dataRow.getCell(col);
+        const g = (cell.value || '').toString().trim();
+        if (!g || g === '—') return;
+        cell.fill = fill(failed ? C.failBg : C.passBg);
+        cell.font = fnt({ bold: true, color: { argb: failed ? C.failFg : C.passFg } });
+      });
+
+      // Sub Grade
+      const gc = gradeColors(sub.subGrade);
+      if (gc) {
+        dataRow.getCell(13).fill = fill(gc.bg);
+        dataRow.getCell(13).font = fnt({ bold: true, color: { argb: gc.fg } });
+      }
+
+      // Failed In — amber
+      dataRow.getCell(14).fill = fill('FFFFF7ED');
+      dataRow.getCell(14).font = fnt({ bold: true, color: { argb: 'FFB45309' } });
+
+      // Status
+      const statusCell = dataRow.getCell(15);
+      statusCell.fill = fill(sub.stillFailing ? C.failBg : C.passBg);
+      statusCell.font = fnt({ bold: true, color: { argb: sub.stillFailing ? C.failFg : C.passFg } });
+
+      // Per-attempt grade cells
+      sub.attemptGrades.forEach((grade, ai) => {
+        const cell = dataRow.getCell(fixedCols + 1 + ai);
+        if (!grade || grade === '—') return;
+        const gc2 = gradeColors(grade);
+        if (gc2) {
+          cell.fill = fill(gc2.bg);
+          cell.font = fnt({ bold: true, color: { argb: gc2.fg }, size: 9 });
+        }
+      });
+    });
+
+    // Merge Name + Enrollment vertically across all subject rows for this student
+    if (subjectCount > 1) {
+      const lastDataRowNum = firstDataRowNum + subjectCount - 1;
+      // Col 1 = #, Col 2 = Name, Col 3 = Enrollment
+      [1, 2, 3].forEach(col => {
+        ws.mergeCells(firstDataRowNum, col, lastDataRowNum, col);
+        const cell = ws.getCell(firstDataRowNum, col);
+        cell.alignment = { ...align('left'), vertical: 'top' };
+        cell.border    = BORDER;
+      });
+    }
+
+    // Add a thin separator row between students (empty row with bottom border)
+    const sepRow = ws.addRow(Array(totalCols).fill(''));
+    sepRow.height = 4;
+    sepRow.eachCell({ includeEmpty: true }, cell => {
+      cell.fill   = fill('FFE2E8F0');
+      cell.border = BORDER;
+    });
+  });
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 export async function masterExport(students, filename = 'Master_Backlog_Report.xlsx') {
   if (!students?.length) return;
@@ -583,6 +861,9 @@ export async function masterExport(students, filename = 'Master_Backlog_Report.x
 
   // Sheet: Still Failing
   buildStillFailingSheet(wb, students);
+
+  // Sheet: Component-wise failure breakdown
+  buildComponentFailureSheet(wb, students);
 
   await download(wb, filename);
 }

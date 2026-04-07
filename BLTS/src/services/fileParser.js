@@ -1,11 +1,12 @@
 import * as XLSX from 'xlsx';
+import { FAIL_GRADES, MAX_SUBJECTS_PER_ROW } from '../config';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 export const trim = (v) => (v === undefined || v === null ? '' : String(v).trim());
 export const num  = (v) => { const f = parseFloat(trim(v)); return isNaN(f) ? null : f; };
 
-const FAIL_GRADES = new Set(['F', 'FF', 'I', 'W', 'AB']);
-export const isFailGrade = (g) => FAIL_GRADES.has(trim(g).toUpperCase());
+const FAIL_GRADES_SET = new Set(FAIL_GRADES);
+export const isFailGrade = (g) => FAIL_GRADES_SET.has(trim(g).toUpperCase());
 
 // Normalise name: uppercase, collapse whitespace — used as the primary join key
 export const normName = (n) => trim(n).toUpperCase().replace(/\s+/g, ' ');
@@ -91,7 +92,7 @@ export function extractSubjectsOR(row) {
   const integrated = isIntegratedFormat(row);
   const subjects = [];
 
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= MAX_SUBJECTS_PER_ROW; i++) {
     const pad = String(i).padStart(2, '0');
 
     const code = trim(row[`SubCode${pad}`]);
@@ -141,7 +142,7 @@ export function extractSubjectsOR(row) {
 // ─── Extract subjects from MFEED row ─────────────────────────────────────────
 export function extractSubjectsMFEED(row) {
   const subjects = [];
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= MAX_SUBJECTS_PER_ROW; i++) {
     const pad = String(i).padStart(2, '0');
     const code = trim(row[`SubCode${pad}`]);
     if (!code || code === '-') continue;

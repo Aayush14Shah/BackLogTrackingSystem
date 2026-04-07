@@ -2,6 +2,7 @@ import {
   trim, num, normName, normalisePeriod, periodSortKey,
   extractSubjectsOR, extractSubjectsMFEED, isFailGrade, parseOneFile,
 } from './fileParser';
+import { DETENTION_THRESHOLD } from '../config';
 
 const ATTEMPT_LABELS = [
   '1st Attempt · Main Exam',
@@ -212,8 +213,8 @@ export async function buildStudents(files) {
 
     const totalActiveBacklogs = currentBacklogs.length;
     const overallStatus =
-      totalActiveBacklogs >= 4 ? 'DETAINED' :
-      totalActiveBacklogs > 0  ? 'BACKLOG'  : 'CLEAR';
+      totalActiveBacklogs >= DETENTION_THRESHOLD ? 'DETAINED' :
+      totalActiveBacklogs > 0                    ? 'BACKLOG'  : 'CLEAR';
 
     const timeline = student.attempts.map(a => ({
       attemptNo:     a.attemptNo,

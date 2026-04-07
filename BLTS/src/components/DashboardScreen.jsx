@@ -14,7 +14,8 @@ import {
   ShieldAlert,
   BookX,
   BarChart2,
-  Upload
+  Upload,
+  GraduationCap
 } from 'lucide-react';
 import {
   BarChart,
@@ -32,6 +33,7 @@ import {
 import { cn } from '../utils/cn';
 import { exportToExcel, exportToCSV } from '../utils/exportUtils';
 import { masterExport } from '../utils/masterExport';
+import { DETENTION_THRESHOLD } from '../config';
 
 // ─── Quick Action Button ──────────────────────────────────────────────────────
 function ActionButton({ icon: Icon, label, sublabel, onClick, variant = 'default', badge, badgeColor = 'red' }) {
@@ -375,15 +377,15 @@ export default function DashboardScreen({ students = [], onNavigate, fileName })
       alerts.push({
         type: 'critical',
         title: `${metrics.detainedStudents} student${metrics.detainedStudents > 1 ? 's' : ''} detained`,
-        description: 'Students with 4+ backlogs need immediate attention'
+        description: `Students with ${DETENTION_THRESHOLD}+ backlogs need immediate attention`
       });
     }
-    const atRisk = students.filter(s => s.totalActiveBacklogs >= 3 && s.totalActiveBacklogs < 4).length;
+    const atRisk = students.filter(s => s.totalActiveBacklogs >= DETENTION_THRESHOLD - 1 && s.totalActiveBacklogs < DETENTION_THRESHOLD).length;
     if (atRisk > 0) {
       alerts.push({
         type: 'warning',
         title: `${atRisk} at risk of detention`,
-        description: '3 backlogs — approaching detention threshold'
+        description: `${DETENTION_THRESHOLD - 1} backlogs — approaching detention threshold`
       });
     }
     const lowSPI = students.filter(s => s.latestSPI && s.latestSPI < 5.0).length;
@@ -463,7 +465,7 @@ export default function DashboardScreen({ students = [], onNavigate, fileName })
             <div className="flex-1 h-px bg-slate-200" />
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             <ActionButton
               icon={Search}
               label="Search Student"
@@ -516,6 +518,13 @@ export default function DashboardScreen({ students = [], onNavigate, fileName })
               sublabel="Load different data"
               onClick={() => onNavigate('upload')}
               variant="default"
+            />
+            <ActionButton
+              icon={GraduationCap}
+              label="Transcript"
+              sublabel="Generate student transcript"
+              onClick={() => onNavigate('transcript')}
+              variant="blue"
             />
           </div>
         </div>
