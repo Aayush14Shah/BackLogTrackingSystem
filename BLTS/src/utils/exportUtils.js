@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
+import { FAIL_GRADES, MARKS_LABELS } from '../config';
 
 // Utility functions for exporting data in different formats
 
@@ -42,7 +43,7 @@ export const exportToCSV = (data, filename = 'student_data.csv') => {
   downloadFile(csvContent, filename, 'text/csv');
 };
 
-const FAIL_GRADES = new Set(['F', 'FF', 'I', 'W', 'AB']);
+const FAIL_GRADES_SET = new Set(FAIL_GRADES);
 
 /**
  * For a backlog subject, returns which components failed.
@@ -53,17 +54,17 @@ function getFailedComponents(sub) {
   const tg = (sub.theoryGrade || '').trim().toUpperCase();
   const mg = (sub.midGrade || '').trim().toUpperCase();
   const vg = (sub.vivaGrade || '').trim().toUpperCase();
-  if (tg && FAIL_GRADES.has(tg)) parts.push('External');
-  if (mg && FAIL_GRADES.has(mg)) parts.push('Internal');
-  if (vg && FAIL_GRADES.has(vg)) parts.push('Viva');
+  if (tg && FAIL_GRADES_SET.has(tg)) parts.push('External');
+  if (mg && FAIL_GRADES_SET.has(mg)) parts.push('Internal');
+  if (vg && FAIL_GRADES_SET.has(vg)) parts.push('Viva');
   // If no component grade is individually flagged but subject is still a backlog,
   // fall back to the overall sub grade label
   if (parts.length === 0 && sub.isBacklog) parts.push(sub.subGrade || 'Failed');
   return parts.join(', ');
 }
 
-// Sub-columns rendered per subject (matching reference tabulation format)
-const SUB_COLS = ['Internal(50)', 'External(50)', 'Viva(50)', 'Total', 'Credit', 'Grade', 'Grade Point', 'Comment'];
+// Sub-columns rendered per subject (matching GTU reference tabulation format: External first, then Internal)
+const SUB_COLS = [MARKS_LABELS.theory, MARKS_LABELS.mid, MARKS_LABELS.viva, 'Total', 'Credit', 'Grade', 'Grade Point', 'Comment'];
 
 // ── Border style helper ────────────────────────────────────────────────────
 const THIN_BORDER = {
@@ -239,11 +240,11 @@ export const exportToExcel = async (data, filename = 'student_data.xlsx') => {
     allSubjects.forEach(({ code }) => {
       const sub = subLookup.get(code);
       if (sub) {
-        const mid   = sub.midMarks   !== '' && sub.midMarks   != null ? sub.midMarks   : '';
         const ext   = sub.theoryMarks !== '' && sub.theoryMarks != null ? sub.theoryMarks : '';
+        const mid   = sub.midMarks   !== '' && sub.midMarks   != null ? sub.midMarks   : '';
         const viva  = sub.vivaMarks  !== '' && sub.vivaMarks  != null ? sub.vivaMarks  : '';
         const total = sub.totalMarks !== '' && sub.totalMarks != null ? sub.totalMarks : '';
-        rowValues.push(mid, ext, viva, total, sub.credits ?? '', sub.subGrade || '', sub.gradePoint != null ? sub.gradePoint : '', sub.comment || '');
+        rowValues.push(ext, mid, viva, total, sub.credits ?? '', sub.subGrade || '', sub.gradePoint != null ? sub.gradePoint : '', sub.comment || '');
       } else {
         for (let i = 0; i < subColCount; i++) rowValues.push('');
       }
@@ -612,7 +613,7 @@ export const generateProvisionalMarksheetHTML = (student, sem) => {
   const totalCr   = sem.totalCredits  != null ? sem.totalCredits  : '—';
   const gradePoints = sem.gradePoints != null ? sem.gradePoints : '—';
 
-  const FAIL_GRADES = new Set(['F', 'FF', 'I', 'W', 'AB']);
+  const FAIL_GRADES_LOCAL = new Set(FAIL_GRADES);
   const isResultFail = /fail|detained/i.test(result);
   const isResultPass = /pass/i.test(result);
 
@@ -623,7 +624,7 @@ export const generateProvisionalMarksheetHTML = (student, sem) => {
     const gradeStyle = (g) => {
       const u = (g || '').trim().toUpperCase();
       if (!u || u === '-' || u === '—') return 'color:#94a3b8;';
-      return FAIL_GRADES.has(u) ? 'color:#dc2626;font-weight:700;' : 'color:#065f46;font-weight:700;';
+      return FAIL_GRADES_LOCAL.has(u) ? 'color:#dc2626;font-weight:700;' : 'color:#065f46;font-weight:700;';
     };
 
     const cell = (val) => val !== null && val !== undefined && val !== '' ? val : '—';

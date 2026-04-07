@@ -22,15 +22,26 @@ const BACKLOG_CATEGORIES = [
   { value: 'pra_viva', label: 'Pra / Viva',   color: 'violet' },
 ];
 
+const FAIL_GRADES_SET = new Set(['F', 'FF', 'I', 'W', 'AB']);
+const isFailGrade = (g) => FAIL_GRADES_SET.has((g || '').trim().toUpperCase());
+
 function getBacklogCategories(student) {
   const cats = new Set();
   student.semesters?.forEach(sem => {
     sem.subjects?.forEach(sub => {
       if (!sub.isBacklog) return;
-      const c = (sub.comment || '').trim().toLowerCase();
-      if (c === 'external') cats.add('external');
-      else if (c === 'internal') cats.add('internal');
-      else if (c === 'pra/viva') cats.add('pra_viva');
+      // Determine which component(s) failed using actual grade fields
+      if (isFailGrade(sub.theoryGrade)) cats.add('external');
+      if (isFailGrade(sub.midGrade))    cats.add('internal');
+      if (isFailGrade(sub.vivaGrade))   cats.add('pra_viva');
+      // Fallback: if no component grade is set but subject is a backlog,
+      // check the comment field as a last resort
+      if (!sub.theoryGrade && !sub.midGrade && !sub.vivaGrade && sub.isBacklog) {
+        const c = (sub.comment || '').trim().toLowerCase();
+        if (c.includes('external')) cats.add('external');
+        else if (c.includes('internal')) cats.add('internal');
+        else if (c.includes('pra') || c.includes('viva')) cats.add('pra_viva');
+      }
     });
   });
   return cats;
