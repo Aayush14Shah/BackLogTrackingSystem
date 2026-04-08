@@ -145,21 +145,17 @@ const generateTranscriptDocx = async (student) => {
       new TableRow({
         cantSplit: true,
         children: [
-          createCell(`SEMESTER: ${semLabel}`, true, AlignmentType.LEFT, 20, 1, false),
-          createCell(`SEAT NO.: ${attempt.seatNo || '—'}`, true, AlignmentType.LEFT, 45, 1, false),
-          createCell(`CREDIT EARNED: ${attempt.earnedCredits || '—'}`, true, AlignmentType.LEFT, 12, 1, false),
-          createCell(`SPI:  ${attempt.spi || '—'}`, true, AlignmentType.LEFT, 11, 1, false),
-          createCell(`GRADE POINT: ${attempt.gradePoints != null ? attempt.gradePoints : '—'}`, true, AlignmentType.LEFT, 12, 1, false),
+          createCell(`SEMESTER: ${semLabel}`, true, AlignmentType.CENTER, 100, 5, false),
         ]
       }),
       new TableRow({
         cantSplit: true,
         children: [
-          createCell("Course Code", true, AlignmentType.CENTER, 20, 1, false),
-          createCell("Course Title", true, AlignmentType.CENTER, 45, 1, false),
+          createCell("Course Title", true, AlignmentType.CENTER, 50, 1, false),
           createCell("Theory Credit", true, AlignmentType.CENTER, 12, 1, false),
-          createCell("Theory Grade", true, AlignmentType.CENTER, 11, 1, false),
-          createCell("Practical\nCredit & Grade", true, AlignmentType.CENTER, 12, 1, false),
+          createCell("Theory Grade", true, AlignmentType.CENTER, 12, 1, false),
+          createCell("Practical Credit", true, AlignmentType.CENTER, 13, 1, false),
+          createCell("Practical Grade", true, AlignmentType.CENTER, 13, 1, false),
         ]
       })
     ];
@@ -167,10 +163,8 @@ const generateTranscriptDocx = async (student) => {
     const subjectsCount = (attempt.subjects || []).length;
     (attempt.subjects || []).forEach((sub, i) => {
       const isFailed = isFail(sub.subGrade);
-      let pracGrade = '-';
-      if (sub.vivaCredits != null && sub.vivaCredits > 0) {
-        pracGrade = `${sub.vivaCredits} / ${sub.vivaGrade || '-'}`;
-      }
+      let pracGrade = sub.vivaGrade || '-';
+      let pracCredit = sub.vivaCredits != null ? sub.vivaCredits.toString() : '-';
       
       const isLastRow = (i === subjectsCount - 1);
 
@@ -178,15 +172,41 @@ const generateTranscriptDocx = async (student) => {
         new TableRow({
           cantSplit: true,
           children: [
-            createCell(sub.code, false, AlignmentType.CENTER, null, 1, isLastRow),
-            createCell(sub.name || '—', false, AlignmentType.LEFT, null, 1, isLastRow),
-            createCell(sub.credits ? sub.credits.toString() : '-', false, AlignmentType.CENTER, null, 1, isLastRow),
+            createCell(`${sub.name || '—'}_${sub.code}`, false, AlignmentType.LEFT, null, 1, isLastRow),
+            createCell(sub.credits != null ? sub.credits.toString() : '-', false, AlignmentType.CENTER, null, 1, isLastRow),
             createCell(sub.subGrade || '-', isFailed, AlignmentType.CENTER, null, 1, isLastRow),
-            createCell(pracGrade, false, AlignmentType.CENTER, null, 1, isLastRow)
+            createCell(pracCredit, false, AlignmentType.CENTER, null, 1, isLastRow),
+            createCell(pracGrade, isFail(sub.vivaGrade), AlignmentType.CENTER, null, 1, isLastRow)
           ]
         })
       );
     });
+
+      subjectsRows.push(
+        new TableRow({
+          cantSplit: true,
+          children: [
+            new TableCell({
+              columnSpan: 5,
+              borders: {
+                top: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+                bottom: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+                left: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+                right: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" }
+              },
+              children: [
+                new Paragraph({
+                  children: [
+                    new TextRun({ text: `SEAT NO: ${attempt.seatNo || '—'}        CREDIT EARNED: ${attempt.earnedCredits || '—'}        SPI: ${attempt.spi || '—'}        GRADE POINT: ${attempt.gradePoints != null ? attempt.gradePoints : '—'}`, size: 18, bold: true })
+                  ],
+                  alignment: AlignmentType.LEFT,
+                  spacing: { before: 100, after: 100 }
+                })
+              ]
+            })
+          ]
+        })
+      );
 
     const subjectsTable = new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
@@ -197,21 +217,17 @@ const generateTranscriptDocx = async (student) => {
   });
 
   // Final Certification & Signatures
-  if (cgpa) {
-    childrenContent.push(
-      new Paragraph({
-        children: [
-          new TextRun({ text: `THIS IS TO CERTIFY THAT ${(student.name || '').toUpperCase()} HAS CLEARED HIS/HER ${programme.toUpperCase()} WITH CGPA OF `, bold: true, size: 20 }),
-          new TextRun({ text: cgpa, bold: true, size: 20 }),
-          new TextRun({ text: classLabel ? ` (CLASS: ${classLabel.toUpperCase()}).` : '.', bold: true, size: 20 }),
-        ],
-        spacing: { before: 200, after: 600 },
-        alignment: AlignmentType.JUSTIFIED
-      })
-    );
-  } else {
-    childrenContent.push(new Paragraph({ spacing: { before: 200, after: 600 } }));
-  }
+  // Final Certification & Signatures
+  childrenContent.push(
+    new Paragraph({
+      children: [
+        new TextRun({ text: `THIS IS TO CERTIFY THAT ${(student.name || '').toUpperCase()} HAS CLEARED HIS/HER MASTER OF SCIENCE( INFORMATION TECHNOLOGY )\nINTEGRATED  WITH CGPA OF ${cgpa || '—'} `, bold: true, size: 20 }),
+        new TextRun({ text: classLabel ? `(CLASS: ${classLabel.toUpperCase()}).` : '.', bold: true, size: 20 }),
+      ],
+      spacing: { before: 200, after: 600 },
+      alignment: AlignmentType.JUSTIFIED
+    })
+  );
 
   // Signature Block
   const sigTable = new Table({
@@ -228,7 +244,11 @@ const generateTranscriptDocx = async (student) => {
       new TableRow({
         children: [
           new TableCell({
-            children: [new Paragraph({ children: [new TextRun({ text: "____________________________________", size: 20 })] }), new Paragraph({ children: [new TextRun({ text: "VERIFIED BY (NAME & SIGNATURE)", size: 18 })] })],
+            children: [new Paragraph({ children: [new TextRun({ text: `DATE: ${new Date().toLocaleDateString('en-GB')}`, size: 18 })] })],
+            verticalAlign: VerticalAlign.BOTTOM,
+          }),
+          new TableCell({
+            children: [new Paragraph({ children: [new TextRun({ text: "____________________________________", size: 20 })], alignment: AlignmentType.CENTER }), new Paragraph({ children: [new TextRun({ text: "VERIFIED BY (NAME & SIGNATURE)", size: 18 })], alignment: AlignmentType.CENTER })],
             verticalAlign: VerticalAlign.BOTTOM,
           }),
           new TableCell({
@@ -331,71 +351,70 @@ function TranscriptPreview({ student }) {
         {attempts.map((attempt, idx) => (
           <div key={idx} className="mb-8 overflow-hidden rounded-lg border border-slate-200">
             {/* Sem Header */}
-            <div className="bg-slate-100/80 px-4 py-3 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-800">SEMESTER: {attempt.semNo || `Sem ${attempt.attemptNo}`}</span>
-              </div>
-              <div className="flex items-center gap-6 text-sm">
-                 <span className="text-slate-600">SEAT NO: <span className="font-bold text-slate-900">{attempt.seatNo || '—'}</span></span>
-                 <span className="text-slate-600">CREDIT EARNED: <span className="font-bold text-slate-900">{attempt.earnedCredits || '—'}</span></span>
-                 <span className="text-slate-600">SPI: <span className="font-bold text-slate-900">{attempt.spi || '—'}</span></span>
-                 <span className="text-slate-600">GRADE POINT: <span className="font-bold text-slate-900">{attempt.gradePoints != null ? attempt.gradePoints : '—'}</span></span>
-              </div>
+            <div className="bg-slate-100/80 px-4 py-3 flex text-center justify-center border-b border-slate-200">
+                <span className="font-bold text-slate-800 uppercase">SEMESTER: {attempt.semNo || `Sem ${attempt.attemptNo}`}</span>
             </div>
 
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 text-[10px] md:text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                  <th className="px-4 py-3 w-1/6">Course Code</th>
-                  <th className="px-4 py-3 w-2/6">Course Title</th>
-                  <th className="px-4 py-3 text-center w-1/6">Theory Credit</th>
-                  <th className="px-4 py-3 text-center w-1/6">Theory Grade</th>
-                  <th className="px-4 py-3 text-center w-1/6">Practical<br/>Credit & Grade</th>
+                  <th className="px-4 py-3 w-[40%]">Course Title</th>
+                  <th className="px-4 py-3 text-center w-[15%]">Theory Credit</th>
+                  <th className="px-4 py-3 text-center w-[15%]">Theory Grade</th>
+                  <th className="px-4 py-3 text-center w-[15%]">Practical Credit</th>
+                  <th className="px-4 py-3 text-center w-[15%]">Practical Grade</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {attempt.subjects?.map((sub, i) => (
                   <tr key={i} className={cn("hover:bg-slate-50 transition-colors", isFail(sub.subGrade) ? 'bg-rose-50/50' : '')}>
-                    <td className="px-4 py-2.5 font-mono text-slate-500 text-xs">{sub.code}</td>
-                    <td className="px-4 py-2.5 text-slate-700 font-medium">{sub.name || '—'}</td>
+                    <td className="px-4 py-2.5 text-slate-700 font-medium">{sub.name || '—'}_{sub.code}</td>
                     <td className="px-4 py-2.5 text-center font-semibold text-slate-600">
-                      {sub.credits || '-'}
+                      {sub.credits != null ? sub.credits : '-'}
                     </td>
                     <td className={cn('px-4 py-2.5 text-center', gradeColor(sub.subGrade))}>
                       {sub.subGrade || '-'}
                     </td>
-                    <td className="px-4 py-2.5 text-center font-medium text-slate-600">
-                      {sub.vivaCredits != null && sub.vivaCredits > 0
-                        ? <span className={gradeColor(sub.vivaGrade)}>{sub.vivaCredits} / {sub.vivaGrade || '-'}</span>
-                        : <span className="text-slate-400">-</span>
-                      }
+                    <td className="px-4 py-2.5 text-center font-semibold text-slate-600">
+                      {sub.vivaCredits != null ? sub.vivaCredits : '-'}
+                    </td>
+                    <td className={cn('px-4 py-2.5 text-center', gradeColor(sub.vivaGrade))}>
+                      {sub.vivaGrade || '-'}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            
+            <div className="bg-white px-4 py-3 flex flex-wrap items-center justify-start gap-8 border-t border-slate-200 text-sm">
+               <span className="text-slate-600">SEAT NO: <span className="font-bold text-slate-900">{attempt.seatNo || '—'}</span></span>
+               <span className="text-slate-600">CREDIT EARNED: <span className="font-bold text-slate-900">{attempt.earnedCredits || '—'}</span></span>
+               <span className="text-slate-600">SPI: <span className="font-bold text-slate-900">{attempt.spi || '—'}</span></span>
+               <span className="text-slate-600">GRADE POINT: <span className="font-bold text-slate-900">{attempt.gradePoints != null ? attempt.gradePoints : '—'}</span></span>
+            </div>
           </div>
         ))}
 
         {/* Final certification */}
-        {cgpa && (
-          <div className="mt-12 bg-emerald-50/50 border border-emerald-100 p-6 rounded-lg text-center">
-            <p className="font-semibold text-slate-800 leading-relaxed uppercase tracking-wide">
-              THIS IS TO CERTIFY THAT <span className="font-bold text-emerald-800">{student.name}</span> HAS CLEARED HIS/HER {programme} WITH CGPA OF{' '}
-              <span className="font-black text-emerald-700 text-lg mx-1">{cgpa}</span>
-              {classLabel ? ` (CLASS: ${classLabel.toUpperCase()})` : ''}.
-            </p>
-          </div>
-        )}
+        <div className="mt-12 bg-emerald-50/50 border border-emerald-100 p-6 rounded-lg text-center">
+          <p className="font-semibold text-slate-800 leading-relaxed uppercase tracking-wide whitespace-pre-wrap">
+            THIS IS TO CERTIFY THAT <span className="font-bold text-emerald-800">{student.name}</span> HAS CLEARED HIS/HER MASTER OF SCIENCE( INFORMATION TECHNOLOGY ){'\n'}INTEGRATED  WITH CGPA OF{' '}
+            <span className="font-black text-emerald-700 text-lg mx-1">{cgpa || '—'}</span>
+            {classLabel ? `(CLASS: ${classLabel.toUpperCase()})` : ''}.
+          </p>
+        </div>
 
         {/* Signatures placeholder */}
-        <div className="mt-16 pt-8 border-t border-slate-100 flex justify-between px-8">
-           <div className="text-center">
+        <div className="mt-16 pt-8 border-t border-slate-100 flex justify-between px-8 items-end gap-4">
+           <div className="text-left w-1/3">
+             <p className="text-sm font-semibold text-slate-600">DATE: {new Date().toLocaleDateString('en-GB')}</p>
+           </div>
+           <div className="text-center w-1/3 flex flex-col items-center">
              <div className="w-48 border-b-2 border-slate-300 mb-2"></div>
              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Verified By</p>
            </div>
-           <div className="text-center">
-             <div className="w-48 border-b-2 border-slate-300 mb-2"></div>
+           <div className="text-right w-1/3 flex flex-col items-end">
+             <div className="w-48 border-b-2 border-slate-300 mb-2 ml-auto"></div>
              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Director's Signature</p>
            </div>
         </div>
