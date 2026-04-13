@@ -5,6 +5,7 @@ import EnhancedSearchScreen from './components/EnhancedSearchScreen';
 import DashboardScreen from './components/DashboardScreen';
 import JourneyReport from './components/JourneyReport/JourneyReport';
 import TranscriptScreen from './components/TranscriptScreen';
+import EnrollmentSubjectWiseScreen from './components/EnrollmentSubjectWiseScreen';
 import { buildStudents } from './services/studentBuilder';
 import React from 'react';
 
@@ -210,6 +211,11 @@ function App() {
               ? <TranscriptScreen students={studentsData} onBack={handleBackToDashboard} />
               : <Navigate to="/upload" replace />
           }
+        />
+
+        <Route
+          path="/enrollment-subject-wise"
+          element={<EnrollmentSubjectWiseScreen />}
         />
 
         {/* Default: redirect to dashboard if data exists, otherwise upload */}

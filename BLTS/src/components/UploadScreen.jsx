@@ -165,7 +165,7 @@ export default function UploadScreen({ onFileLoaded }) {
           <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Student Backlog Tracker</h1>
           <p className="text-slate-500 mt-2">Choose what you want to do</p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 w-full max-w-2xl">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 w-full max-w-4xl">
           <button
             onClick={() => setMode('backlog')}
             className="flex flex-col items-start gap-3 bg-white border-2 border-slate-200 hover:border-blue-400 hover:shadow-md rounded-2xl p-6 text-left transition-all group"
@@ -198,6 +198,24 @@ export default function UploadScreen({ onFileLoaded }) {
               </p>
             </div>
             <span className="text-xs font-semibold text-violet-600 flex items-center gap-1 mt-auto">
+              Get started <ChevronRight className="w-3.5 h-3.5" />
+            </span>
+          </button>
+
+          <button
+            onClick={() => window.location.hash = '#/enrollment-subject-wise'}
+            className="flex flex-col items-start gap-3 bg-white border-2 border-slate-200 hover:border-amber-400 hover:shadow-md rounded-2xl p-6 text-left transition-all group"
+          >
+            <div className="p-3 bg-amber-100 rounded-xl group-hover:bg-amber-200 transition-colors">
+              <FileSpreadsheet className="w-6 h-6 text-amber-600" />
+            </div>
+            <div>
+              <p className="font-bold text-slate-800 text-base">Enrollment Subject-Wise</p>
+              <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+                Upload failure componentwise file to generate enrollment-wise subject failure report with checkmarks.
+              </p>
+            </div>
+            <span className="text-xs font-semibold text-amber-600 flex items-center gap-1 mt-auto">
               Get started <ChevronRight className="w-3.5 h-3.5" />
             </span>
           </button>
