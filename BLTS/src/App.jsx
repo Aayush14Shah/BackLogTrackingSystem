@@ -6,6 +6,7 @@ import DashboardScreen from './components/DashboardScreen';
 import JourneyReport from './components/JourneyReport/JourneyReport';
 import TranscriptScreen from './components/TranscriptScreen';
 import EnrollmentSubjectWiseScreen from './components/EnrollmentSubjectWiseScreen';
+import UrgentFileScreen from './components/UrgentFileScreen';
 import { buildStudents } from './services/studentBuilder';
 import React from 'react';
 
@@ -216,6 +217,11 @@ function App() {
         <Route
           path="/enrollment-subject-wise"
           element={<EnrollmentSubjectWiseScreen />}
+        />
+
+        <Route
+          path="/urgent-file"
+          element={<UrgentFileScreen />}
         />
 
         {/* Default: redirect to dashboard if data exists, otherwise upload */}
